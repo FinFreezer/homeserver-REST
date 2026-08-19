@@ -41,18 +41,19 @@ func main() {
 		log.Println("Error logging in to the server.")
 		os.Exit(1)
 	}
+	outgoingPort := os.Getenv("DFLT_PORT")
 	newMux := http.NewServeMux()
-	newMux.HandleFunc("POST /login", newApiConf.Login)
-	newMux.HandleFunc("GET /listdir/{path...}", newApiConf.ListContents)
-	newMux.HandleFunc("GET /stream/{path...}", newApiConf.StreamVideo)
-	newMux.HandleFunc("PUT /cd", newApiConf.MoveRootDirectory)
-	newMux.HandleFunc("POST /remoteUpdate", newApiConf.UpdateAndRestart)
+	newMux.HandleFunc("POST api/login", newApiConf.Login)
+	newMux.HandleFunc("GET api/dir/{path...}", newApiConf.ListContents)
+	newMux.HandleFunc("GET api/stream/{path...}", newApiConf.StreamVideo)
+	newMux.HandleFunc("PUT dev/cd", newApiConf.MoveRootDirectory)
+	newMux.HandleFunc("POST dev/remoteUpdate", newApiConf.UpdateAndRestart)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	newServer := http.FileServer(http.Dir("./cmd/server"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
-	log.Println("Listening and Serving on port :12000")
-	http.ListenAndServe(":12000", newMux)
+	log.Printf("Listening and Serving on port %s", outgoingPort)
+	http.ListenAndServe(outgoingPort, newMux)
 	if err != nil {
 		log.Fatal(err)
 	}

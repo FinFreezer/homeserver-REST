@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.12.3
-	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 )
 
 require (
