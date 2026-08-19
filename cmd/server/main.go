@@ -43,11 +43,11 @@ func main() {
 	}
 	outgoingPort := os.Getenv("DFLT_PORT")
 	newMux := http.NewServeMux()
-	newMux.HandleFunc("POST api/login", newApiConf.Login)
-	newMux.HandleFunc("GET api/dir/{path...}", newApiConf.ListContents)
-	newMux.HandleFunc("GET api/stream/{path...}", newApiConf.StreamVideo)
-	newMux.HandleFunc("PUT dev/cd", newApiConf.MoveRootDirectory)
-	newMux.HandleFunc("POST dev/remoteUpdate", newApiConf.UpdateAndRestart)
+	newMux.HandleFunc("POST /api/login", newApiConf.Login)
+	newMux.HandleFunc("GET /api/dir/{path...}", newApiConf.ListContents)
+	newMux.HandleFunc("GET /api/stream/{path...}", newApiConf.StreamVideo)
+	newMux.HandleFunc("PUT /dev/cd", newApiConf.MoveRootDirectory)
+	newMux.HandleFunc("POST /dev/remoteUpdate", newApiConf.UpdateAndRestart)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	newServer := http.FileServer(http.Dir("./cmd/server"))
 	newMux.Handle("/", newServer)
