@@ -2,3 +2,4 @@
 *workflow*
 assets/**/
 *.log
+*localupdate.sh
