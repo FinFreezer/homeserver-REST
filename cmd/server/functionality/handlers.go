@@ -140,7 +140,15 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	type Response struct {
 		Message string `json:"reply"`
 	}
-	fullPath := filepath.Join(a.CurrentRoot, r.PathValue("path"))
+	requestPath := r.PathValue("path")
+	log.Printf("Received a request with path %s.", requestPath)
+	var fullPath string
+	//fullPath := filepath.Join(a.CurrentRoot, r.PathValue("path"))
+	if strings.Contains(requestPath, a.CurrentRoot) {
+		fullPath = r.PathValue("path")
+	} else {
+		fullPath = filepath.Join(a.CurrentRoot, r.PathValue("path"))
+	}
 	log.Printf("Received a request to stream path %s\n", fullPath)
 	fi, err := os.Stat(fullPath)
 	if err != nil {
@@ -296,6 +304,70 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, 200, response{
 		Message: "Root moved succesfully.",
 	})
+}
+
+func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
+	type Response struct {
+		Message string `json:"reply"`
+	}
+	requestPath := r.PathValue("path")
+	requestedPage, err := strconv.Atoi(r.URL.Query().Get("Page"))
+	if err != nil {
+		respondWithError(w, 500, "Error finding page.", err)
+	}
+	log.Printf("Received a request with path %s.", requestPath)
+	var fullPath string
+	//fullPath := filepath.Join(a.CurrentRoot, r.PathValue("path"))
+	if strings.Contains(requestPath, a.CurrentRoot) {
+		fullPath = r.PathValue("path")
+	} else {
+		fullPath = filepath.Join(a.CurrentRoot, r.PathValue("path"))
+	}
+	log.Printf("Received a request to stream image archive at %s\n", fullPath)
+	fi, err := os.Stat(fullPath)
+	if err != nil {
+		log.Println(err)
+		dir := filepath.Dir(fullPath)
+		if dirStat, err := os.Stat(dir); dirStat.IsDir() && err == nil {
+			log.Println("Looking for closest match.")
+			fileToMatch := filepath.Base(fullPath)
+			closestMatch, err := findClosestMatch(dir, fileToMatch)
+			log.Printf("Matched %s to %s.\n", fileToMatch, closestMatch)
+			if err != nil {
+				log.Println(err)
+				respondWithError(w, 400, "Couldn't reach file or directory.\n", err)
+				return
+			}
+			fullPath = closestMatch
+		} else {
+			log.Println(err)
+			respondWithError(w, 400, "Couldn't reach file or directory.\n", err)
+			return
+		}
+	}
+	fi, err = os.Stat(fullPath)
+	if fi != nil && fi.IsDir() {
+		respondWithError(w, 400, "Can't stream a directory.\n", err)
+		return
+	}
+	file, err := os.Open(fullPath)
+	w.Header().Set("Cache-Control", "no-cache")
+	err, contentType := streamZipImages(fullPath, w, requestedPage)
+	if err != nil {
+		respondWithError(w, 500, "Error opening file.\n", err)
+		return
+	}
+	defer file.Close()
+	/*contentType, err := readContentType(file)
+	if err != nil {
+		log.Println(err)
+		respondWithError(w, 500, "Internal error.", err)
+		return
+	}*/
+	log.Printf("Serving filetype %s", contentType)
+	//w.Header().Set("Content-Type", contentType)
+	//http.ServeContent(w, r, file.Name(), fi.ModTime(), file) Ready method.
+	log.Println("Streaming full file.")
 }
 
 func (a *ApiConfig) UpdateAndRestart(w http.ResponseWriter, r *http.Request) {

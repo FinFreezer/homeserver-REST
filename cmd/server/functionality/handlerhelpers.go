@@ -1,6 +1,7 @@
 package functionality
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
@@ -265,6 +266,7 @@ func isValidType(name string) bool {
 }
 
 func cleanPath(internal string, currentRoot string) string {
+	log.Printf("Working with internal path of %s, and root of %s.\n", internal, currentRoot)
 	pathList := strings.Split(internal, "/")
 	rootList := strings.Split(currentRoot, "/")
 	rootList[0] = "stream"
@@ -313,7 +315,7 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 }
 
 func sortFilesByNumber(files []os.DirEntry) []os.DirEntry {
-	log.Println("Sorting files..")
+	//log.Println("Sorting files..")
 	fileMap := make(map[int]os.DirEntry)
 	fileNumbers := []int{}
 	unNumberedFiles := []os.DirEntry{}
@@ -345,7 +347,7 @@ func sortFilesByNumber(files []os.DirEntry) []os.DirEntry {
 }
 
 func findFileNumber(filename string) (int, error) {
-	log.Println("Reading file numbers...")
+	//log.Println("Reading file numbers...")
 	numberStart := -1
 	numberEnd := -1
 	for i, char := range filename {
@@ -366,16 +368,16 @@ func findFileNumber(filename string) (int, error) {
 	if numberStart == -1 || numberEnd == -1 {
 		return -1, nil
 	}
-	log.Printf("Number '%s' found for file %s.\n", filename[numberStart:numberEnd], filename)
+	//log.Printf("Number '%s' found for file %s.\n", filename[numberStart:numberEnd], filename)
 	return strconv.Atoi(filename[numberStart:numberEnd])
 }
 
 func sortFileSlice(filemap map[int]os.DirEntry, fileslice []int) []os.DirEntry {
-	log.Println("Sorting slice indexes...")
+	//log.Println("Sorting slice indexes...")
 	sort.Ints(fileslice)
 	sortedFiles := make([]os.DirEntry, len(fileslice))
 	for i, fileNumber := range fileslice {
-		log.Printf("Sorting %s to place %d.", filemap[fileNumber].Name(), i)
+		//log.Printf("Sorting %s to place %d.", filemap[fileNumber].Name(), i)
 		sortedFiles[i] = filemap[fileNumber]
 	}
 	return sortedFiles
@@ -420,4 +422,52 @@ func doubleSort(files []os.DirEntry) []os.DirEntry {
 		overallFileSlice = append(overallFileSlice, sortFilesByNumber(groupMap[key])...)
 	}
 	return overallFileSlice
+}
+
+func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage int) (error, string) {
+	cache := []*zip.File{}
+	contentType := ""
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err, ""
+	}
+	defer reader.Close()
+	for _, f := range reader.File {
+		cache = append(cache, f)
+	}
+	//Assume the call for 1st page is '1' -> 0th index of the cache.
+	requestedPage -= 1
+
+	//Check limits.
+	if requestedPage > len(cache)-1 {
+		requestedPage = len(cache) - 1
+	}
+	if requestedPage < 0 {
+		requestedPage = 0
+	}
+	if requestedPage < len(cache) {
+		imageReader, err := cache[requestedPage].Open()
+		if err != nil {
+			return err, ""
+		}
+
+		buf := make([]byte, 512)
+		n, err := imageReader.Read(buf)
+		contentType = http.DetectContentType(buf[:n])
+		if err != nil && err != io.EOF {
+			return err, ""
+		}
+		imageReader, _ = cache[requestedPage].Open()
+		w.Header().Set("Content-Type", contentType)
+		w.WriteHeader(http.StatusOK)
+		if err != nil {
+			return err, ""
+		}
+
+		_, err = io.Copy(w, imageReader)
+		if err != nil {
+			return err, ""
+		}
+	}
+	return nil, contentType
 }
