@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -437,15 +438,20 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 	}
 	//Assume the call for 1st page is '1' -> 0th index of the cache.
 	requestedPage -= 1
+	finalPage := len(cache) - 1
 
 	//Check limits.
-	if requestedPage > len(cache)-1 {
-		requestedPage = len(cache) - 1
+	log.Printf("Requested for page #%d to be displayed.\n", requestedPage)
+	if requestedPage > finalPage {
+		overflow := (requestedPage - finalPage)
+		requestedPage = overflow
 	}
 	if requestedPage < 0 {
-		requestedPage = 0
+		overflow := math.Abs(float64(requestedPage))
+		requestedPage = (finalPage - int(overflow))
 	}
 	if requestedPage < len(cache) {
+		log.Printf("Serving page #%d.\n", requestedPage)
 		imageReader, err := cache[requestedPage].Open()
 		if err != nil {
 			return err, ""
