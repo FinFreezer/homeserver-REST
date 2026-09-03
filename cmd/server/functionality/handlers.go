@@ -2,6 +2,7 @@ package functionality
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,143 @@ import (
 	"github.com/finfreezer/homeserver/internal/database"
 )
 
+func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received verification request.")
+	type response struct {
+		Message    string `json:"reply"`
+		Authorized bool   `json:"authorization,omitempty"`
+		Username   string `json:"username,omitempty"`
+	}
+	// Try to get token from cookie
+	cookie, err := GetAuthToken(r)
+	if err != nil {
+		respondWithJSON(w, http.StatusUnauthorized, response{
+			Message:    "No active session",
+			Authorized: false,
+		})
+		return
+	}
+
+	// Validate the JWT
+	userName, err := auth.ValidateJWT(cookie, a.Secret)
+	if err != nil {
+		// Clear invalid cookie
+		ClearAuthCookie(w)
+		respondWithJSON(w, http.StatusUnauthorized, response{
+			Message:    "Invalid or expired token",
+			Authorized: false,
+		})
+		return
+	}
+
+	// Find user
+	dbUser, err := a.Database.FindUser(context.Background(), userName)
+	if err != nil {
+		respondWithJSON(w, http.StatusUnauthorized, response{
+			Message:    "User not found",
+			Authorized: false,
+		})
+		return
+	}
+
+	// Return success with user info
+	respondWithJSON(w, http.StatusOK, response{
+		Message:    "Active session",
+		Authorized: dbUser.IsAdmin,
+		Username:   dbUser.Name,
+	})
+}
+
+func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
+	type logoutParams struct {
+		Name string `json:"name,omitempty"`
+	}
+	type response struct {
+		Message string `json:"reply"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	params := logoutParams{}
+	err := decoder.Decode(&params)
+	log.Printf("Received logout request for %s.\n", params.Name)
+	if err != nil {
+		cookie, cookieErr := GetAuthToken(r)
+		if cookieErr == nil {
+			userName, validateErr := auth.ValidateJWT(cookie, a.Secret)
+			if validateErr == nil {
+				params.Name = userName
+			}
+		}
+		if params.Name == "" {
+
+			// Clear the cookie
+			ClearAuthCookie(w)
+			respondWithJSON(w, http.StatusOK, response{
+				Message: "Successfully logged out",
+			})
+			return
+		}
+	}
+
+	if params.Name != "" {
+		// Optional: Also clear the token from database
+		_, err = a.Database.UpdateUserToken(r.Context(),
+			database.UpdateUserTokenParams{Authtoken: sql.NullString{String: "", Valid: false}, Name: params.Name},
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to clear token from database for user %s: %v", params.Name, err)
+		}
+	}
+
+	// Clear the cookie
+	ClearAuthCookie(w)
+	respondWithJSON(w, http.StatusOK, response{
+		Message: "Successfully logged out",
+	})
+}
+
+func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) {
+	var pwHash string
+	type newUserParams struct {
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+	type response struct {
+		Message string `json:"reply"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+
+	params := newUserParams{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 500, "Couldn't decode parameters", err)
+		return
+	}
+	log.Printf("Received a registration request for %s.\n", params.Name)
+	if pwHash, err = auth.CreatePasswordHash(params.Password); err != nil {
+		respondWithError(w, 500, "Error creating password hash.", err)
+		return
+	}
+	addParams := database.CreateUserParams{
+		Name:         params.Name,
+		PasswordHash: pwHash,
+		IsAdmin:      false,
+	}
+
+	dbUser, err := a.Database.CreateUser(r.Context(), addParams)
+	if err != nil {
+		respondWithError(w, 500, "Error adding user.", err)
+		return
+	}
+
+	respondWithJSON(w, 200, response{
+		Message: fmt.Sprintf("Succesfully registered user %s.\n", dbUser.Name),
+	})
+}
+
 func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	type loginParameters struct {
 		Name      string `json:"name"`
@@ -27,8 +165,8 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type response struct {
-		Message string `json:"reply"`
-		Token   string `json:"token,omitempty"`
+		Message    string `json:"reply"`
+		Authorized bool   `json:"authorization,omitempty"`
 	}
 
 	log.Println("Received login request.")
@@ -42,9 +180,13 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if params.WithToken {
-		userName, err := auth.ValidateJWT(params.Token, a.Secret)
+		newToken, err := GetAuthToken(r)
 		if err != nil {
-			respondWithError(w, http.StatusInternalServerError,
+			newToken = params.Token
+		}
+		userName, err := auth.ValidateJWT(newToken, a.Secret)
+		if err != nil {
+			respondWithError(w, http.StatusForbidden,
 				"Unexpected validation error. Token may be expired, please login.",
 				err,
 			)
@@ -76,14 +218,24 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		accessToken, err := auth.MakeJWT(dbUser.Name, a.Secret, time.Hour*24*7)
+		if err != nil {
+			respondWithError(w, http.StatusUnauthorized, "Failed to create token.", err)
+			return
+		}
+		SetAuthCookie(w, accessToken)
 		responseMsg := fmt.Sprintf("Succesfully logged in as %s\n", dbUser.Name)
-		params := database.UpdateUserTokenParams{Authtoken: accessToken, Name: dbUser.Name}
-		a.Database.UpdateUserToken(context.Background(), params)
-		a.Authorized = true
+		params := database.UpdateUserTokenParams{
+			Authtoken: sql.NullString{String: accessToken, Valid: true},
+			Name:      dbUser.Name,
+		}
+		a.Database.UpdateUserToken(r.Context(), params)
+		if dbUser.IsAdmin {
+			a.Authorized = true
+		}
 		respondWithJSON(w, http.StatusOK,
 			response{
-				Message: responseMsg,
-				Token:   accessToken,
+				Message:    responseMsg,
+				Authorized: dbUser.IsAdmin,
 			},
 		)
 	}
@@ -98,6 +250,9 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 	type ListDirResponse struct {
 		Message string   `json:"reply"`
 		Files   FileNode `json:"directory"`
+	}
+	if a.CurrentRoot == "" || r.PathValue("path") == "" {
+		log.Println("Panic")
 	}
 	fullPath := a.CurrentRoot + r.PathValue("path")
 	dirOnlyFlag := r.URL.Query().Get("dirOnly")

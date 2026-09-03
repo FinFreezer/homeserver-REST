@@ -477,3 +477,37 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 	}
 	return nil, contentType
 }
+
+func SetAuthCookie(w http.ResponseWriter, token string) {
+	cookie := &http.Cookie{
+		Name:     "jwt",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60, // 7 days
+		HttpOnly: true,
+		Secure:   true, // Set to false for local development without HTTPS
+		SameSite: http.SameSiteStrictMode,
+	}
+	http.SetCookie(w, cookie)
+}
+
+func ClearAuthCookie(w http.ResponseWriter) {
+	cookie := &http.Cookie{
+		Name:     "jwt",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1, // Delete immediately
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	}
+	http.SetCookie(w, cookie)
+}
+
+func GetAuthToken(r *http.Request) (string, error) {
+	cookie, err := r.Cookie("jwt")
+	if err != nil {
+		return "", err
+	}
+	return cookie.Value, nil
+}

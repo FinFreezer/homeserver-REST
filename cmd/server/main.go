@@ -9,37 +9,64 @@ import (
 
 	pg "github.com/finfreezer/homeserver/cmd/server/functionality"
 	"github.com/finfreezer/homeserver/internal/auth"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 func main() {
+	godotenv.Load()
+	user := os.Getenv("ADMIN_USER")
+	log.Printf("Env User: %s", user)
+	pass := os.Getenv("ADMIN_PASS")
 	args := os.Args
-	if len(args) < 2 {
-		fmt.Println("Please input login credentials.")
-		os.Exit(1)
-	}
-	if args[1] == "delete" {
-		newApiConf, err := pg.OpenDatabase()
+	var newApiConf *pg.ApiConfig
+	var err error
+	if user == "" || pass == "" {
+		if len(args) < 2 {
+			fmt.Println("Please input login credentials.")
+			os.Exit(1)
+		}
+		if args[1] == "delete" {
+			newApiConf, err = pg.OpenDatabase()
+			if err != nil {
+				log.Println(err)
+				os.Exit(1)
+			}
+			newApiConf.Database.DeleteUsers(context.Background())
+			fmt.Println("Cleared 'users' table.")
+			os.Exit(0)
+		}
+		if len(args) != 3 {
+			fmt.Println("Please input the username and password you wish to use remotely.")
+			os.Exit(1)
+		}
+		newApiConf, err = pg.OpenDatabase()
 		if err != nil {
 			log.Println(err)
 			os.Exit(1)
 		}
-		newApiConf.Database.DeleteUsers(context.Background())
-		fmt.Println("Cleared 'users' table.")
-		os.Exit(0)
-	}
-	if len(args) != 3 {
-		fmt.Println("Please input the username and password you wish to use remotely.")
-		os.Exit(1)
-	}
-	newApiConf, err := pg.OpenDatabase()
-	if err != nil {
-		log.Println(err)
-	}
-	pwHash, err := auth.CreatePasswordHash(args[2]) //Username + hashed password
-	if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2]); !ok {
-		log.Println("Error logging in to the server.")
-		os.Exit(1)
+		pwHash, err := auth.CreatePasswordHash(args[2]) //Username + hashed password
+		if err != nil {
+			log.Println(err)
+		}
+		if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2]); !ok {
+			log.Println("Error logging in to the server.")
+			os.Exit(1)
+		}
+	} else {
+		newApiConf, err = pg.OpenDatabase()
+		if err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		pwHash, err := auth.CreatePasswordHash(pass) //Username + hashed password
+		if err != nil {
+			log.Println(err)
+		}
+		if ok := pg.AddAdmin(newApiConf.Database, user, pwHash, pass); !ok {
+			log.Println("Error logging in to the server.")
+			os.Exit(1)
+		}
 	}
 	outgoingPort := os.Getenv("DFLT_PORT")
 	newMux := http.NewServeMux()
@@ -49,12 +76,15 @@ func main() {
 	newMux.HandleFunc("GET /api/streamarchive/{path...}", newApiConf.StreamArchive)
 	newMux.HandleFunc("PUT /dev/cd", newApiConf.MoveRootDirectory)
 	newMux.HandleFunc("POST /dev/remoteUpdate", newApiConf.UpdateAndRestart)
+	newMux.HandleFunc("POST /api/register", newApiConf.RegisterRegularUser)
+	newMux.HandleFunc("GET /api/verify", newApiConf.VerifyAuth)
+	newMux.HandleFunc("POST /api/logout", newApiConf.Logout)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	newServer := http.FileServer(http.Dir("./cmd/server"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
 	log.Printf("Listening and Serving on port %s", outgoingPort)
-	http.ListenAndServe(outgoingPort, newMux)
+	err = http.ListenAndServe(outgoingPort, newMux)
 	if err != nil {
 		log.Fatal(err)
 	}
