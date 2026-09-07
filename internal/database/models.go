@@ -11,6 +11,15 @@ import (
 	"github.com/google/uuid"
 )
 
+type Guestbook struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Author    string
+	Content   string
+	Authorid  uuid.NullUUID
+}
+
 type User struct {
 	ID           uuid.UUID
 	CreatedAt    time.Time

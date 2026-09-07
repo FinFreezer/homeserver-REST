@@ -79,6 +79,10 @@ func main() {
 	newMux.HandleFunc("POST /api/register", newApiConf.RegisterRegularUser)
 	newMux.HandleFunc("GET /api/verify", newApiConf.VerifyAuth)
 	newMux.HandleFunc("POST /api/logout", newApiConf.Logout)
+	newMux.HandleFunc("POST /api/addEntry", newApiConf.AddGuestbookEntry)
+	newMux.HandleFunc("GET /api/getEntries", newApiConf.GetGuestbookEntries)
+	newMux.HandleFunc("POST /api/deleteEntry", newApiConf.DeleteGuestbookEntry)
+	newMux.HandleFunc("POST /api/wipeEntries", newApiConf.WipeGuestbook)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	newServer := http.FileServer(http.Dir("./cmd/server"))
 	newMux.Handle("/", newServer)

@@ -42,7 +42,10 @@ func AddAdmin(db *database.Queries, username, passwordhash, password string) boo
 }
 
 func addGuest(db *database.Queries) {
-
+	guest, err := db.FindUser(context.Background(), "DevGuest")
+	if guest.Name != "" && err == nil {
+		return
+	}
 	guestPwHash, err := auth.CreatePasswordHash("GuestPass")
 	if err != nil {
 		log.Println(err)
