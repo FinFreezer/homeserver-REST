@@ -10,7 +10,9 @@ import (
 	pg "github.com/finfreezer/homeserver/cmd/server/functionality"
 	"github.com/finfreezer/homeserver/internal/auth"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
+
+	//_ "github.com/lib/pq"
+	_ "github.com/glebarez/go-sqlite"
 )
 
 func main() {

@@ -3,3 +3,4 @@
 assets/**/
 *.log
 *localupdate.sh
+!.env.example

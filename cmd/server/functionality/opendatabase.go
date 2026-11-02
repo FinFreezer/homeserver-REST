@@ -32,7 +32,8 @@ func OpenDatabase() (*ApiConfig, error) {
 	newRoot := os.Getenv("ASSET_ROOT")
 	for i := 0; i < 10; i++ {
 		log.Printf("Calling sql.Open with %s", dbURL)
-		db, errLoop = sql.Open("postgres", dbURL)
+		//db, errLoop = sql.Open("postgres", dbURL)
+		db, errLoop = sql.Open("sqlite", dbURL)
 		if errLoop != nil {
 			log.Printf("sql.Open failed: %v", errLoop)
 			time.Sleep(2 * time.Second)
