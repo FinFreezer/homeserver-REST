@@ -71,6 +71,9 @@ func main() {
 		}
 	}
 	outgoingPort := os.Getenv("DFLT_PORT")
+	if outgoingPort == "" {
+		outgoingPort = ":8080"
+	}
 	newMux := http.NewServeMux()
 	newMux.HandleFunc("POST /api/login", newApiConf.Login)
 	newMux.HandleFunc("GET /api/dir/{path...}", newApiConf.ListContents)

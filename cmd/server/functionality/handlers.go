@@ -307,6 +307,7 @@ func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	addParams := database.CreateUserParams{
+		ID:           uuid.NewString(),
 		Name:         params.Name,
 		PasswordHash: pwHash,
 		IsAdmin:      0,
