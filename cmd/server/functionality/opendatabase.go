@@ -27,9 +27,18 @@ func OpenDatabase() (*ApiConfig, error) {
 	godotenv.Load()
 	platform := os.Getenv("PLATFORM")
 	secret := os.Getenv("SECRET")
+	if secret == "" {
+		log.Println("Unset secret variable, please include an environment variable.")
+	}
 	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Println("Unset dbURL variable, please include an environment variable.")
+	}
 	ApiKey := os.Getenv("API_KEY")
 	newRoot := os.Getenv("ASSET_ROOT")
+	if newRoot == "" {
+		log.Println("Unset root directory, please include a root as an environment variable.")
+	}
 	for i := 0; i < 10; i++ {
 		log.Printf("Calling sql.Open with %s", dbURL)
 		//db, errLoop = sql.Open("postgres", dbURL)
