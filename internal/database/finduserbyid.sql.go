@@ -7,16 +7,14 @@ package database
 
 import (
 	"context"
-
-	"github.com/google/uuid"
 )
 
 const findUserByID = `-- name: FindUserByID :one
 SELECT id, created_at, updated_at, name, password_hash, is_admin, authtoken FROM users
-WHERE id = $1
+WHERE id = ?
 `
 
-func (q *Queries) FindUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+func (q *Queries) FindUserByID(ctx context.Context, id string) (User, error) {
 	row := q.db.QueryRowContext(ctx, findUserByID, id)
 	var i User
 	err := row.Scan(

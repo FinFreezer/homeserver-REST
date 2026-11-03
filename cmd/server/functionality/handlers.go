@@ -75,13 +75,13 @@ func (a *ApiConfig) DeleteGuestbookEntry(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, 500, "Faulty message ID.", err)
 		return
 	}
-	foundMessage, err := a.Database.DeleteSpecificGuestbookEntry(r.Context(), deleteId)
+	foundMessage, err := a.Database.DeleteSpecificGuestbookEntry(r.Context(), deleteId.String())
 	if err != nil {
 		respondWithError(w, 500, "Faulty message ID.", err)
 		return
 	}
 	respondWithJSON(w, 200, response{
-		Message: fmt.Sprintf("Deleted message with ID %s succesfully.\n", foundMessage.ID.String()),
+		Message: fmt.Sprintf("Deleted message with ID %s succesfully.\n", foundMessage.ID),
 	})
 }
 
@@ -103,14 +103,24 @@ func (a *ApiConfig) GetGuestbookEntries(w http.ResponseWriter, r *http.Request) 
 	EntriesData, err := a.Database.GetGuestbookEntries(r.Context())
 	ResponseEntries := []GuestbookBackend{}
 	if err != nil {
-		respondWithError(w, 500, "Error getting entires.", err)
+		respondWithError(w, 500, "Error getting entries.", err)
 		return
 	}
 	for _, entry := range EntriesData {
+		createdTime, err := time.Parse("2006-01-02 15:04:05", entry.CreatedAt)
+		if err != nil {
+			respondWithError(w, 500, "Unexpected or faulty timestamp in database.", err)
+			return
+		}
+		updatedTime, err := time.Parse("2006-01-02 15:04:05", entry.UpdatedAt)
+		if err != nil {
+			respondWithError(w, 500, "Unexpected or faulty timestamp in database.", err)
+			return
+		}
 		ResponseEntries = append(ResponseEntries, GuestbookBackend{
-			ID:        entry.ID.String(),
-			CreatedAt: entry.CreatedAt.Format("02/01/2006 - 15:04"),
-			UpdatedAt: entry.UpdatedAt.Format("02/01/2006 - 15:04"),
+			ID:        entry.ID,
+			CreatedAt: createdTime.Format("02/01/2006 - 15:04"),
+			UpdatedAt: updatedTime.Format("02/01/2006 - 15:04"),
 			Author:    entry.Author,
 			Content:   entry.Content,
 		})
@@ -152,15 +162,15 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 	var Authorid uuid.NullUUID
 	user, err := a.Database.FindUser(r.Context(), params.Author)
 	if err == nil {
-		Authorid = uuid.NullUUID{UUID: user.ID, Valid: true}
+		Authorid = uuid.NullUUID{UUID: uuid.MustParse(user.ID), Valid: true}
 	} else {
 		Authorid = uuid.NullUUID{Valid: false}
 	}
 	databaseParams := database.CreateGuestbookEntryParams{
-		ID:       EntryIdValue,
+		ID:       EntryIdValue.String(),
 		Author:   params.Author,
 		Content:  params.Message,
-		Authorid: Authorid,
+		Authorid: sql.NullString{String: Authorid.UUID.String(), Valid: true},
 	}
 	_, err = a.Database.CreateGuestbookEntry(r.Context(), databaseParams)
 	if err != nil {
@@ -213,9 +223,10 @@ func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return success with user info
+	isAdmin := dbUser.IsAdmin == 1
 	respondWithJSON(w, http.StatusOK, response{
 		Message:    "Active session",
-		Authorized: dbUser.IsAdmin,
+		Authorized: isAdmin,
 		Username:   dbUser.Name,
 	})
 }
@@ -298,7 +309,7 @@ func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) 
 	addParams := database.CreateUserParams{
 		Name:         params.Name,
 		PasswordHash: pwHash,
-		IsAdmin:      false,
+		IsAdmin:      0,
 	}
 
 	dbUser, err := a.Database.CreateUser(r.Context(), addParams)
@@ -386,13 +397,14 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 			Name:      dbUser.Name,
 		}
 		a.Database.UpdateUserToken(r.Context(), params)
-		if dbUser.IsAdmin {
+		isAdmin := dbUser.IsAdmin == 1
+		if isAdmin {
 			a.Authorized = true
 		}
 		respondWithJSON(w, http.StatusOK,
 			response{
 				Message:    responseMsg,
-				Authorized: dbUser.IsAdmin,
+				Authorized: isAdmin,
 			},
 		)
 	}

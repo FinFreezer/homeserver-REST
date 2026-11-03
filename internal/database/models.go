@@ -6,26 +6,23 @@ package database
 
 import (
 	"database/sql"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 type Guestbook struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string
+	CreatedAt string
+	UpdatedAt string
 	Author    string
 	Content   string
-	Authorid  uuid.NullUUID
+	Authorid  sql.NullString
 }
 
 type User struct {
-	ID           uuid.UUID
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           string
+	CreatedAt    string
+	UpdatedAt    string
 	Name         string
 	PasswordHash string
-	IsAdmin      bool
+	IsAdmin      int64
 	Authtoken    sql.NullString
 }

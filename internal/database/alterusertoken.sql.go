@@ -12,8 +12,8 @@ import (
 
 const updateUserToken = `-- name: UpdateUserToken :one
 UPDATE users
-SET authtoken = $1
-WHERE name = $2
+SET authtoken = ?
+WHERE name = ?
 RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken
 `
 

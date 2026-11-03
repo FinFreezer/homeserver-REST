@@ -86,7 +86,8 @@ func main() {
 	newMux.HandleFunc("POST /api/deleteEntry", newApiConf.DeleteGuestbookEntry)
 	newMux.HandleFunc("POST /api/wipeEntries", newApiConf.WipeGuestbook)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
-	newServer := http.FileServer(http.Dir("./cmd/server"))
+	//newServer := http.FileServer(http.Dir("./cmd/server"))
+	newServer := http.FileServer(http.Dir("./assets"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
 	log.Printf("Listening and Serving on port %s", outgoingPort)

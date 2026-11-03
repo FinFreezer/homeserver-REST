@@ -11,7 +11,7 @@ import (
 
 const findUser = `-- name: FindUser :one
 SELECT id, created_at, updated_at, name, password_hash, is_admin, authtoken FROM users
-WHERE name = $1
+WHERE name = ?
 `
 
 func (q *Queries) FindUser(ctx context.Context, name string) (User, error) {

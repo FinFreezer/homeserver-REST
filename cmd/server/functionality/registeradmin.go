@@ -6,13 +6,15 @@ import (
 
 	"github.com/finfreezer/homeserver/internal/auth"
 	"github.com/finfreezer/homeserver/internal/database"
+	"github.com/google/uuid"
 )
 
 func AddAdmin(db *database.Queries, username, passwordhash, password string) bool {
 	params := database.CreateUserParams{
+		ID:           uuid.NewString(),
 		Name:         username,
 		PasswordHash: passwordhash,
-		IsAdmin:      true,
+		IsAdmin:      1,
 	}
 	log.Println("Looking if user exists.")
 	user, err := db.FindUser(context.Background(), params.Name)
@@ -51,9 +53,10 @@ func addGuest(db *database.Queries) {
 		log.Println(err)
 	}
 	guestParams := database.CreateUserParams{
+		ID:           uuid.NewString(),
 		Name:         "DevGuest",
 		PasswordHash: guestPwHash,
-		IsAdmin:      true,
+		IsAdmin:      1,
 	}
 	gstUsr, err := db.CreateUser(context.Background(), guestParams)
 	if err != nil {

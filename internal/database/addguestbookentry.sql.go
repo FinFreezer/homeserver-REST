@@ -7,28 +7,27 @@ package database
 
 import (
 	"context"
-
-	"github.com/google/uuid"
+	"database/sql"
 )
 
 const createGuestbookEntry = `-- name: CreateGuestbookEntry :one
 INSERT INTO guestbook (id, created_at, updated_at, author, content, authorId)
 VALUES (
-    $1,
-    NOW(),
-    NOW(),
-    $2,
-    $3,
-    $4
+    ?,
+    datetime(),
+    datetime(),
+    ?,
+    ?,
+    ?
 )
 RETURNING id, created_at, updated_at, author, content, authorid
 `
 
 type CreateGuestbookEntryParams struct {
-	ID       uuid.UUID
+	ID       string
 	Author   string
 	Content  string
-	Authorid uuid.NullUUID
+	Authorid sql.NullString
 }
 
 func (q *Queries) CreateGuestbookEntry(ctx context.Context, arg CreateGuestbookEntryParams) (Guestbook, error) {

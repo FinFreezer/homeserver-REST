@@ -7,17 +7,15 @@ package database
 
 import (
 	"context"
-
-	"github.com/google/uuid"
 )
 
 const deleteSpecificGuestbookEntry = `-- name: DeleteSpecificGuestbookEntry :one
 DELETE FROM guestbook
-WHERE id = $1
+WHERE id = ?
 RETURNING id, created_at, updated_at, author, content, authorid
 `
 
-func (q *Queries) DeleteSpecificGuestbookEntry(ctx context.Context, id uuid.UUID) (Guestbook, error) {
+func (q *Queries) DeleteSpecificGuestbookEntry(ctx context.Context, id string) (Guestbook, error) {
 	row := q.db.QueryRowContext(ctx, deleteSpecificGuestbookEntry, id)
 	var i Guestbook
 	err := row.Scan(

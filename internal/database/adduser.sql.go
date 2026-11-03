@@ -12,24 +12,30 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, name, password_hash, is_admin)
 VALUES (
-    gen_random_uuid(),
-    NOW(),
-    NOW(),
-    $1,
-    $2,
-    $3
+    ?,
+    datetime(),
+    datetime(),
+    ?,
+    ?,
+    ?
 )
 RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken
 `
 
 type CreateUserParams struct {
+	ID           string
 	Name         string
 	PasswordHash string
-	IsAdmin      bool
+	IsAdmin      int64
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Name, arg.PasswordHash, arg.IsAdmin)
+	row := q.db.QueryRowContext(ctx, createUser,
+		arg.ID,
+		arg.Name,
+		arg.PasswordHash,
+		arg.IsAdmin,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
