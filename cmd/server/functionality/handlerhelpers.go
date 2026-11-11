@@ -15,7 +15,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
+
+	"github.com/finfreezer/homeserver/internal/database"
 )
 
 type FileNode struct {
@@ -510,4 +513,28 @@ func GetAuthToken(r *http.Request) (string, error) {
 		return "", err
 	}
 	return cookie.Value, nil
+}
+
+func GetSessionToken(r *http.Request) (string, error) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		return "", err
+	}
+	return cookie.Value, nil
+}
+
+func VerifySession(user database.User, session database.Session) bool {
+	expiresUTC, err := time.Parse("02/01/2006 - 15:04", session.ExpiresAt)
+	if err != nil {
+		log.Println("Error parsing date in VerifySession")
+		return false
+	}
+	if user.ID == session.UserID &&
+		user.Authtoken.Valid &&
+		user.Authtoken.String == session.TokenHash &&
+		expiresUTC.After(time.Now().UTC()) &&
+		!session.RevokedAt.Valid {
+		return true
+	}
+	return false
 }

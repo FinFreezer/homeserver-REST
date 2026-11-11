@@ -330,7 +330,6 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		Name      string `json:"name"`
 		Password  string `json:"password"`
 		WithToken bool   `json:"withToken"`
-		Token     string `json:"token,omitempty"`
 	}
 
 	type response struct {
@@ -348,27 +347,22 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Couldn't decode parameters", err)
 		return
 	}
-	if params.WithToken {
-		newToken, err := GetAuthToken(r)
+	if cookie, err := GetAuthToken(r); err != nil {
+		hash := auth.HashSessionToken(cookie)
+		session, err := a.Database.GetSession(r.Context(), hash)
 		if err != nil {
-			newToken = params.Token
-		}
-		userName, err := auth.ValidateJWT(newToken, a.Secret)
-		if err != nil {
-			respondWithError(w, http.StatusForbidden,
-				"Unexpected validation error. Token may be expired, please login.",
-				err,
-			)
+			auth.ClearSessionCookie(w)
+			respondWithError(w, http.StatusUnauthorized, "Invalid session, please try again.", err)
 			return
 		}
-		dbUser, err := a.Database.FindUser(context.Background(), userName)
+		user, err := a.Database.FindUserByID(r.Context(), session.UserID)
 		if err != nil {
-			respondWithError(w, http.StatusUnauthorized, "Couldn't find user.", err)
+			respondWithError(w, http.StatusUnauthorized, "Could not match session to user.", err)
 			return
 		}
-		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", dbUser.Name)
-		a.Authorized = true
-		respondWithJSON(w, http.StatusOK, response{Message: responseMsg})
+		if VerifySession(user, session) {
+
+		}
 
 	} else {
 		dbUser, err := a.Database.FindUser(context.Background(), params.Name)

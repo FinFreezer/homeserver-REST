@@ -17,6 +17,15 @@ type Guestbook struct {
 	Authorid  sql.NullString
 }
 
+type Session struct {
+	TokenHash           string
+	UserID              string
+	CreatedAt           string
+	ExpiresAt           string
+	RevokedAt           sql.NullString
+	LastAuthenticatedAt string
+}
+
 type User struct {
 	ID           string
 	CreatedAt    string
