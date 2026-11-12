@@ -186,49 +186,50 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received verification request.")
 	type response struct {
-		Message    string `json:"reply"`
-		Authorized bool   `json:"authorization,omitempty"`
-		Username   string `json:"username,omitempty"`
+		Message  string `json:"reply"`
+		Username string `json:"username,omitempty"`
 	}
 	// Try to get token from cookie
-	cookie, err := GetAuthToken(r)
+	//cookie, err := GetAuthToken(r)
+
+	cookie, err := GetSessionToken(r)
 	if err != nil {
 		respondWithJSON(w, http.StatusUnauthorized, response{
-			Message:    "No active session",
-			Authorized: false,
+			Message: "No active session",
 		})
 		return
 	}
 
-	// Validate the JWT
-	userName, err := auth.ValidateJWT(cookie, a.Secret)
+	// Validate the session
+	//userName, err := auth.ValidateJWT(cookie, a.Secret)
+
+	hash := auth.HashSessionToken(cookie)
+	session, err := a.Database.GetSession(r.Context(), hash)
+	if err != nil {
+		auth.ClearSessionCookie(w)
+		respondWithError(w, http.StatusUnauthorized, "Invalid session, log-in manually.", err)
+		return
+	}
+	user, err := a.Database.FindUserByID(r.Context(), session.UserID)
 	if err != nil {
 		// Clear invalid cookie
 		ClearAuthCookie(w)
 		respondWithJSON(w, http.StatusUnauthorized, response{
-			Message:    "Invalid or expired token",
-			Authorized: false,
+			Message: "Invalid or expired token. Log-in to refresh.",
 		})
 		return
 	}
-
-	// Find user
-	dbUser, err := a.Database.FindUser(context.Background(), userName)
-	if err != nil {
-		respondWithJSON(w, http.StatusUnauthorized, response{
-			Message:    "User not found",
-			Authorized: false,
-		})
+	if VerifySession(user, session) {
+		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
+		respondWithJSON(w, http.StatusOK,
+			response{
+				Message: responseMsg,
+			},
+		)
 		return
 	}
 
-	// Return success with user info
-	isAdmin := dbUser.IsAdmin == 1
-	respondWithJSON(w, http.StatusOK, response{
-		Message:    "Active session",
-		Authorized: isAdmin,
-		Username:   dbUser.Name,
-	})
+	respondWithError(w, http.StatusUnauthorized, "Potentially invalid or expired session. Please log-in.", err)
 }
 
 // POST /api/logout
@@ -327,14 +328,12 @@ func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) 
 // POST /api/login
 func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	type loginParameters struct {
-		Name      string `json:"name"`
-		Password  string `json:"password"`
-		WithToken bool   `json:"withToken"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
 	}
 
 	type response struct {
-		Message    string `json:"reply"`
-		Authorized bool   `json:"authorization,omitempty"`
+		Message string `json:"reply"`
 	}
 
 	log.Println("Received login request.")
@@ -361,7 +360,13 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if VerifySession(user, session) {
-
+			responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
+			respondWithJSON(w, http.StatusOK,
+				response{
+					Message: responseMsg,
+				},
+			)
+			return
 		}
 
 	} else {
@@ -392,14 +397,9 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 			Name:      dbUser.Name,
 		}
 		a.Database.UpdateUserToken(r.Context(), params)
-		isAdmin := dbUser.IsAdmin == 1
-		if isAdmin {
-			a.Authorized = true
-		}
 		respondWithJSON(w, http.StatusOK,
 			response{
-				Message:    responseMsg,
-				Authorized: isAdmin,
+				Message: responseMsg,
 			},
 		)
 	}

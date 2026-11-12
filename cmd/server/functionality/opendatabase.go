@@ -1,23 +1,26 @@
 package functionality
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"os"
 	"time"
 
+	cfg "github.com/finfreezer/homeserver/internal/config"
 	"github.com/finfreezer/homeserver/internal/database"
 	"github.com/joho/godotenv"
 )
 
 type ApiConfig struct {
-	Database    *database.Queries
-	Platform    string
-	Secret      string
-	ApiKey      string
-	Authorized  bool
-	AssetRoot   string
-	CurrentRoot string
+	Database       *database.Queries
+	Platform       string
+	Secret         string
+	ApiKey         string
+	Authorized     bool
+	AssetRoot      string
+	CurrentRoot    string
+	ActiveSessions *cfg.Sessions
 }
 
 func OpenDatabase() (*ApiConfig, error) {
@@ -60,14 +63,25 @@ func OpenDatabase() (*ApiConfig, error) {
 		log.Println(errLoop)
 	}
 	dbQueries := database.New(db)
+	sessions := cfg.NewSessions()
+	dbSessions, err := dbQueries.GetAllSessions(context.Background())
+	if err != nil {
+		log.Println(err)
+	}
+	expired := sessions.InitSessions(dbSessions)
+	for _, session := range expired {
+		dbQueries.DeleteSession(context.Background(), session)
+	}
+
 	newApiConf := ApiConfig{
-		Database:    dbQueries,
-		Platform:    platform,
-		Secret:      secret,
-		ApiKey:      ApiKey,
-		Authorized:  false,
-		AssetRoot:   newRoot,
-		CurrentRoot: newRoot,
+		Database:       dbQueries,
+		Platform:       platform,
+		Secret:         secret,
+		ApiKey:         ApiKey,
+		Authorized:     false,
+		AssetRoot:      newRoot,
+		CurrentRoot:    newRoot,
+		ActiveSessions: sessions,
 	}
 	return &newApiConf, nil
 }
