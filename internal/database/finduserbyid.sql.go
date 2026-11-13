@@ -10,7 +10,7 @@ import (
 )
 
 const findUserByID = `-- name: FindUserByID :one
-SELECT id, created_at, updated_at, name, password_hash, is_admin, authtoken FROM users
+SELECT id, created_at, updated_at, name, password_hash, is_admin, authtoken_hash FROM users
 WHERE id = ?
 `
 
@@ -24,7 +24,7 @@ func (q *Queries) FindUserByID(ctx context.Context, id string) (User, error) {
 		&i.Name,
 		&i.PasswordHash,
 		&i.IsAdmin,
-		&i.Authtoken,
+		&i.AuthtokenHash,
 	)
 	return i, err
 }

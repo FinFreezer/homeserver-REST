@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE users
 (
-    id TEXT PRIMARY KEY,
+    id TEXT UNIQUE PRIMARY KEY,
     created_at TEXT NOT NULL DEFAULT current_timestamp,
     updated_at TEXT NOT NULL DEFAULT current_timestamp,
     name TEXT NOT NULL,

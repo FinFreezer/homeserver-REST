@@ -1,5 +1,5 @@
 -- name: UpdateUserToken :one
 UPDATE users
-SET authtoken = ?
+SET authtoken_hash = ?
 WHERE name = ?
 RETURNING *;

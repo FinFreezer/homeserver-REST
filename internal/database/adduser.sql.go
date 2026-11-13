@@ -19,7 +19,7 @@ VALUES (
     ?,
     ?
 )
-RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken
+RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken_hash
 `
 
 type CreateUserParams struct {
@@ -44,7 +44,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Name,
 		&i.PasswordHash,
 		&i.IsAdmin,
-		&i.Authtoken,
+		&i.AuthtokenHash,
 	)
 	return i, err
 }

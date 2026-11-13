@@ -186,8 +186,9 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received verification request.")
 	type response struct {
-		Message  string `json:"reply"`
-		Username string `json:"username,omitempty"`
+		Message       string `json:"reply"`
+		Username      string `json:"username,omitempty"`
+		Authorization bool   `json:"authorization"`
 	}
 	// Try to get token from cookie
 	//cookie, err := GetAuthToken(r)
@@ -223,7 +224,9 @@ func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
 		respondWithJSON(w, http.StatusOK,
 			response{
-				Message: responseMsg,
+				Message:       responseMsg,
+				Username:      user.Name,
+				Authorization: user.IsAdmin == 1,
 			},
 		)
 		return
@@ -235,7 +238,7 @@ func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 // POST /api/logout
 func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
 	type logoutParams struct {
-		Name string `json:"name,omitempty"`
+		Name string `json:"name"`
 	}
 	type response struct {
 		Message string `json:"reply"`
@@ -247,32 +250,38 @@ func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
 	err := decoder.Decode(&params)
 	log.Printf("Received logout request for %s.\n", params.Name)
 	if err != nil {
-		cookie, cookieErr := GetAuthToken(r)
-		if cookieErr == nil {
-			userName, validateErr := auth.ValidateJWT(cookie, a.Secret)
-			if validateErr == nil {
-				params.Name = userName
-			}
-		}
-		if params.Name == "" {
-
-			// Clear the cookie
-			ClearAuthCookie(w)
-			respondWithJSON(w, http.StatusOK, response{
-				Message: "Successfully logged out",
-			})
-			return
-		}
+		log.Printf("Error decoding log-out request: %s\n", err.Error())
+		auth.ClearSessionCookie(w)
+		respondWithJSON(w, http.StatusOK, response{
+			Message: "Cleared current session.",
+		})
+		return
 	}
 
-	if params.Name != "" {
+	if params.Name != "unset" {
 		// Optional: Also clear the token from database
+		token, err := GetSessionToken(r)
+		if err != nil {
+			log.Println(err.Error())
+		}
+		_, err = a.Database.DeleteSession(r.Context(), auth.HashSessionToken(token))
+		if err != nil {
+			log.Printf("Warning: Failed to clear session from database for user %s: %v.\n", params.Name, err)
+		}
 		_, err = a.Database.UpdateUserToken(r.Context(),
-			database.UpdateUserTokenParams{Authtoken: sql.NullString{String: "", Valid: false}, Name: params.Name},
+			database.UpdateUserTokenParams{
+				AuthtokenHash: sql.NullString{String: "", Valid: false},
+				Name:          params.Name,
+			},
 		)
 		if err != nil {
 			log.Printf("Warning: Failed to clear token from database for user %s: %v.\n", params.Name, err)
 		}
+		auth.ClearSessionCookie(w)
+		respondWithJSON(w, http.StatusOK, response{
+			Message: "Successfully logged out",
+		})
+		return
 	}
 
 	// Clear the cookie
@@ -333,7 +342,8 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type response struct {
-		Message string `json:"reply"`
+		Message       string `json:"reply"`
+		Authorization bool   `json:"authorization"`
 	}
 
 	log.Println("Received login request.")
@@ -346,63 +356,53 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Couldn't decode parameters", err)
 		return
 	}
-	if cookie, err := GetAuthToken(r); err != nil {
-		hash := auth.HashSessionToken(cookie)
-		session, err := a.Database.GetSession(r.Context(), hash)
-		if err != nil {
-			auth.ClearSessionCookie(w)
-			respondWithError(w, http.StatusUnauthorized, "Invalid session, please try again.", err)
-			return
-		}
-		user, err := a.Database.FindUserByID(r.Context(), session.UserID)
-		if err != nil {
-			respondWithError(w, http.StatusUnauthorized, "Could not match session to user.", err)
-			return
-		}
-		if VerifySession(user, session) {
-			responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
-			respondWithJSON(w, http.StatusOK,
-				response{
-					Message: responseMsg,
-				},
-			)
-			return
-		}
-
-	} else {
-		dbUser, err := a.Database.FindUser(context.Background(), params.Name)
-		if err != nil {
-			respondWithError(w, http.StatusUnauthorized, "Couldn't find user.", err)
-			return
-		}
-
-		match, err := auth.CheckPassword(params.Password, dbUser.PasswordHash)
-		if err != nil {
-			respondWithError(w, http.StatusBadRequest, "Unexpected error.", err)
-			return
-		}
-		if !match {
-			respondWithError(w, http.StatusUnauthorized, "Incorrect password.", err)
-			return
-		}
-		accessToken, err := auth.MakeJWT(dbUser.Name, a.Secret, time.Hour*24*7)
-		if err != nil {
-			respondWithError(w, http.StatusUnauthorized, "Failed to create token.", err)
-			return
-		}
-		SetAuthCookie(w, accessToken)
-		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", dbUser.Name)
-		params := database.UpdateUserTokenParams{
-			Authtoken: sql.NullString{String: accessToken, Valid: true},
-			Name:      dbUser.Name,
-		}
-		a.Database.UpdateUserToken(r.Context(), params)
-		respondWithJSON(w, http.StatusOK,
-			response{
-				Message: responseMsg,
-			},
-		)
+	dbUser, err := a.Database.FindUser(context.Background(), params.Name)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find user.", err)
+		return
 	}
+
+	match, err := auth.CheckPassword(params.Password, dbUser.PasswordHash)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unexpected error.", err)
+		return
+	}
+	if !match {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect password.", err)
+		return
+	}
+	/*accessToken, err := auth.MakeJWT(dbUser.Name, a.Secret, time.Hour*24*7)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Failed to create token.", err)
+		return
+	}
+	SetAuthCookie(w, accessToken)*/
+	sessionToken := auth.GenerateSessionToken()
+	tokenHash := auth.HashSessionToken(sessionToken)
+	auth.SetSessionCookie(w, sessionToken)
+	responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", dbUser.Name)
+	updateParams := database.UpdateUserTokenParams{
+		AuthtokenHash: sql.NullString{String: tokenHash, Valid: true},
+		Name:          dbUser.Name,
+	}
+	a.Database.UpdateUserToken(r.Context(), updateParams)
+	session := database.InsertSessionParams{
+		TokenHash: tokenHash,
+		UserID:    dbUser.ID,
+		ExpiresAt: time.Now().UTC().Add(time.Hour * 24 * 7).Format("02/01/2006 - 15:04"),
+	}
+	_, err = a.Database.InsertSession(r.Context(), session)
+	if err != nil {
+		respondWithError(w, 500, "Unable to create new session.", err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK,
+		response{
+			Message:       responseMsg,
+			Authorization: dbUser.IsAdmin == 1,
+		},
+	)
+
 }
 
 // GET /api/dir/{path...}

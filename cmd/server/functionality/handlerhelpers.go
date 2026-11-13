@@ -530,8 +530,8 @@ func VerifySession(user database.User, session database.Session) bool {
 		return false
 	}
 	if user.ID == session.UserID &&
-		user.Authtoken.Valid &&
-		user.Authtoken.String == session.TokenHash &&
+		user.AuthtokenHash.Valid &&
+		user.AuthtokenHash.String == session.TokenHash &&
 		expiresUTC.After(time.Now().UTC()) &&
 		!session.RevokedAt.Valid {
 		return true

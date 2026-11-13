@@ -47,7 +47,11 @@ func (s *Sessions) AddSession(user database.User) {
 	session := Session{
 		UserID: user.ID,
 		Active: true,
-		Token:  user.Authtoken.String,
+		Token:  user.AuthtokenHash.String,
 	}
 	s.Sessions = append(s.Sessions, session)
+}
+
+func (s *Sessions) ClearSession(user database.User) {
+
 }

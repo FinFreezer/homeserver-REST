@@ -8,7 +8,7 @@ CREATE TABLE users_new (
     name TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     is_admin INTEGER NOT NULL DEFAULT 0,
-    authtoken TEXT UNIQUE
+    authtoken_hash TEXT UNIQUE
 );
 
 INSERT INTO users_new (id, created_at, updated_at, name, password_hash, is_admin)

@@ -12,18 +12,18 @@ import (
 
 const updateUserToken = `-- name: UpdateUserToken :one
 UPDATE users
-SET authtoken = ?
+SET authtoken_hash = ?
 WHERE name = ?
-RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken
+RETURNING id, created_at, updated_at, name, password_hash, is_admin, authtoken_hash
 `
 
 type UpdateUserTokenParams struct {
-	Authtoken sql.NullString
-	Name      string
+	AuthtokenHash sql.NullString
+	Name          string
 }
 
 func (q *Queries) UpdateUserToken(ctx context.Context, arg UpdateUserTokenParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, updateUserToken, arg.Authtoken, arg.Name)
+	row := q.db.QueryRowContext(ctx, updateUserToken, arg.AuthtokenHash, arg.Name)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -32,7 +32,7 @@ func (q *Queries) UpdateUserToken(ctx context.Context, arg UpdateUserTokenParams
 		&i.Name,
 		&i.PasswordHash,
 		&i.IsAdmin,
-		&i.Authtoken,
+		&i.AuthtokenHash,
 	)
 	return i, err
 }

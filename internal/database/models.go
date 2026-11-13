@@ -27,11 +27,11 @@ type Session struct {
 }
 
 type User struct {
-	ID           string
-	CreatedAt    string
-	UpdatedAt    string
-	Name         string
-	PasswordHash string
-	IsAdmin      int64
-	Authtoken    sql.NullString
+	ID            string
+	CreatedAt     string
+	UpdatedAt     string
+	Name          string
+	PasswordHash  string
+	IsAdmin       int64
+	AuthtokenHash sql.NullString
 }
