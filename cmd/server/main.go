@@ -79,15 +79,28 @@ func main() {
 	newMux.HandleFunc("GET /api/dir/{path...}", newApiConf.ListContents)
 	newMux.HandleFunc("GET /api/stream/{path...}", newApiConf.StreamVideo)
 	newMux.HandleFunc("GET /api/streamarchive/{path...}", newApiConf.StreamArchive)
-	newMux.HandleFunc("PUT /dev/cd", newApiConf.MoveRootDirectory)
-	newMux.HandleFunc("POST /dev/remoteUpdate", newApiConf.UpdateAndRestart)
+	//newMux.HandleFunc("PUT /dev/cd", newApiConf.MoveRootDirectory)
+	//newMux.HandleFunc("POST /dev/remoteUpdate", newApiConf.UpdateAndRestart)
 	newMux.HandleFunc("POST /api/register", newApiConf.RegisterRegularUser)
 	newMux.HandleFunc("GET /api/verify", newApiConf.VerifyAuth)
 	newMux.HandleFunc("POST /api/logout", newApiConf.Logout)
 	newMux.HandleFunc("POST /api/addEntry", newApiConf.AddGuestbookEntry)
 	newMux.HandleFunc("GET /api/getEntries", newApiConf.GetGuestbookEntries)
-	newMux.HandleFunc("POST /api/deleteEntry", newApiConf.DeleteGuestbookEntry)
-	newMux.HandleFunc("POST /api/wipeEntries", newApiConf.WipeGuestbook)
+	//newMux.HandleFunc("POST /dev/deleteEntry", newApiConf.DeleteGuestbookEntry)
+	//newMux.HandleFunc("POST /dev/wipeEntries", newApiConf.WipeGuestbook)
+
+	newMux.Handle("PUT /dev/cd", pg.CheckClearance(
+		http.HandlerFunc(newApiConf.MoveRootDirectory), newApiConf,
+	))
+	newMux.Handle("POST /dev/remoteUpdate", pg.CheckClearance(
+		http.HandlerFunc(newApiConf.MoveRootDirectory), newApiConf,
+	))
+	newMux.Handle("POST /dev/deleteEntry", pg.CheckClearance(
+		http.HandlerFunc(newApiConf.DeleteGuestbookEntry), newApiConf,
+	))
+	newMux.Handle("POST /dev/wipeEntries", pg.CheckClearance(
+		http.HandlerFunc(newApiConf.WipeGuestbook), newApiConf,
+	))
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	//newServer := http.FileServer(http.Dir("./cmd/server"))
 	newServer := http.FileServer(http.Dir("./assets"))
