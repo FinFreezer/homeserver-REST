@@ -28,7 +28,7 @@ func main() {
 			fmt.Println("Please input login credentials.")
 			os.Exit(1)
 		}
-		if args[1] == "delete" {
+		if args[1] == "delete" && os.Getenv("PLATFORM") == "dev" {
 			newApiConf, err = pg.OpenDatabase()
 			if err != nil {
 				log.Println(err)
@@ -75,6 +75,7 @@ func main() {
 		outgoingPort = ":8080"
 	}
 	newMux := http.NewServeMux()
+	backendorigin := os.Getenv("DST_SERVER") + os.Getenv("DFLT_PORT")
 	newMux.HandleFunc("POST /api/login", newApiConf.Login)
 	newMux.HandleFunc("GET /api/dir/{path...}", newApiConf.ListContents)
 	newMux.HandleFunc("GET /api/stream/{path...}", newApiConf.StreamVideo)
@@ -88,7 +89,6 @@ func main() {
 	newMux.HandleFunc("GET /api/getEntries", newApiConf.GetGuestbookEntries)
 	//newMux.HandleFunc("POST /dev/deleteEntry", newApiConf.DeleteGuestbookEntry)
 	//newMux.HandleFunc("POST /dev/wipeEntries", newApiConf.WipeGuestbook)
-
 	newMux.Handle("PUT /dev/cd", pg.CheckClearance(
 		http.HandlerFunc(newApiConf.MoveRootDirectory), newApiConf,
 	))
@@ -101,13 +101,20 @@ func main() {
 	newMux.Handle("POST /dev/wipeEntries", pg.CheckClearance(
 		http.HandlerFunc(newApiConf.WipeGuestbook), newApiConf,
 	))
+	handler := pg.ApplyMiddleware(
+		newMux,
+		pg.IncludeSecureHeaders(backendorigin),
+		pg.BlockCSRF(os.Getenv("WEBSITE_HOST")),
+		pg.RateLimitRequests(),
+	)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	//newServer := http.FileServer(http.Dir("./cmd/server"))
 	newServer := http.FileServer(http.Dir("./assets"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
 	log.Printf("Listening and Serving on port %s", outgoingPort)
-	err = http.ListenAndServe(outgoingPort, newMux)
+	//err = http.ListenAndServe(outgoingPort, newMux)
+	err = http.ListenAndServe(outgoingPort, handler)
 	if err != nil {
 		log.Fatal(err)
 	}
