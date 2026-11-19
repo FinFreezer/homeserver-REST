@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"math"
 	"net/http"
@@ -537,4 +538,84 @@ func VerifySession(user database.User, session database.Session) bool {
 		return true
 	}
 	return false
+}
+
+func SearchForMatches(root string, searchTerm string) (*FileNode, error) {
+	type fileMatch struct {
+		score float64
+		file  fs.DirEntry
+		path  string
+	}
+	matchDict := make(map[string]fileMatch)
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if !d.IsDir() {
+			if strings.Contains(d.Name(), searchTerm) {
+				score := float64(len(d.Name()) / len(searchTerm))
+				matchDict[d.Name()] = fileMatch{
+					score: score,
+					file:  d,
+					path:  filepath.Join(path, d.Name()),
+				}
+			}
+		}
+		return nil
+	})
+	return nil, nil
+}
+
+func calculateMatchScore(name string, searchTerm string) float64 {
+	standardizedName := strings.ToLower(name)
+	standardizedTerm := strings.ToLower(searchTerm)
+	var totalScore float64 = 0.0
+	if strings.Contains(standardizedName, standardizedTerm) {
+		totalScore = 1.0 + (float64(len(standardizedTerm)) / float64(len(standardizedName)))
+		/*if totalScore > 1.0 {
+			totalScore = 1.0
+		}*/
+		return totalScore
+	}
+	fullParts := strings.Split(standardizedTerm, " ")
+	maxPartialScore := 1.0 / float64(len(fullParts))
+	log.Printf("Max partial score of %.2f\n", maxPartialScore)
+	for _, part := range fullParts {
+		if strings.Contains(standardizedName, part) {
+			totalScore += maxPartialScore
+		} else {
+			for i := len(part) - 1; i > 0; i-- {
+				if len(part[:i]) < 3 {
+					totalScore += 0.0
+					break
+				}
+				log.Printf("Comparing %s to %s\n", part[:i], standardizedName)
+				if strings.Contains(standardizedName, part[:i]) {
+					start := strings.Index(standardizedName, part[:i])
+					matchingPart := standardizedName[start:]
+					end := strings.Index(matchingPart, " ")
+					if end == -1 {
+						end = len(matchingPart) - 1
+					}
+					log.Printf("%d, %d", start, end)
+					comparisonSlice := matchingPart[:end]
+					adjustmentFactor := (float64(len(part[:i])) / float64(len(comparisonSlice)))
+					log.Printf("Adjustment factor score %.2f\n", adjustmentFactor)
+					totalScore += maxPartialScore * adjustmentFactor
+					log.Printf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore)
+					break
+				}
+			}
+		}
+	}
+	return totalScore
+}
+
+func calcLengthAdjustment(original string, part string) float64 {
+	start := strings.Index(original, part)
+	matchingPart := original[start:]
+	end := strings.Index(matchingPart, " ")
+	if end == -1 {
+		end = len(matchingPart) - 1
+	}
+	comparisonSlice := matchingPart[:end]
+	adjustmentFactor := (float64(len(part)) / float64(len(comparisonSlice)))
+	return adjustmentFactor
 }

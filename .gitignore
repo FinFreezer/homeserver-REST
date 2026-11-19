@@ -4,3 +4,4 @@ assets/**/
 *.log
 *localupdate.sh
 !.env.example
+*_test.go
