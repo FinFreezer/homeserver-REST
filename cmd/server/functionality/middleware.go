@@ -26,11 +26,11 @@ type LimiterClient struct {
 	Left      int
 }
 type Limiter struct {
-	KeyMap map[string]LimiterClient
+	KeyMap map[string]*LimiterClient
 }
 
 var (
-	LimitMap        = make(map[string]LimiterClient)
+	LimitMap        = make(map[string]*LimiterClient)
 	LimitedRequests = Limiter{KeyMap: LimitMap}
 )
 
@@ -130,13 +130,19 @@ func RateLimitRequests() middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("Serving a request to %s\n", r.URL.Path)
 			host, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				log.Println(err)
 				respondWithError(w, 400, "Unable to verify connection.", err)
 				return
 			}
+			if strings.Contains(r.URL.Path, "verify") || strings.Contains(r.URL.Path, "Entries") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if limit, ok := LimitedRequests.KeyMap[host]; ok {
+				log.Printf("Serving session %+v\n", limit)
 				if limit.Now().UTC().After(limit.ExpiresIn) {
 					limit.Left = maxRequestsPerIP
 					limit.ExpiresIn = limit.Now().UTC().Add(defaultLimiterTime)
@@ -147,19 +153,22 @@ func RateLimitRequests() middleware {
 					limitSeconds := int(limitRefresh.Seconds())
 					limitSecondsStr := strconv.Itoa(limitSeconds)
 					w.Header().Add("Retry-After", limitSecondsStr)
-					respondWithJSON(w, 429, response{Message: "Too many requests."})
+					msg := fmt.Sprintf("Too many requests. Try again in %s seconds.", limitSecondsStr)
+					respondWithJSON(w, 429, response{Message: msg})
 					return
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 			log.Printf("Serving new requests to client IP: %s\n", redactFullIP(host))
+			//log.Printf("Serving new requests to client IP: %s\n", host)
 			newClient := LimiterClient{
+				Now:       time.Now().UTC,
 				ExpiresIn: time.Now().UTC().Add(defaultLimiterTime),
 				Key:       host,
 				Left:      maxRequestsPerIP,
 			}
-			LimitedRequests.KeyMap[host] = newClient
+			LimitedRequests.KeyMap[host] = &newClient
 			next.ServeHTTP(w, r)
 		})
 	}
