@@ -550,7 +550,7 @@ func SearchForMatches(root string, searchTerm string) (*FileNode, error) {
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
 			if strings.Contains(d.Name(), searchTerm) {
-				score := float64(len(d.Name()) / len(searchTerm))
+				score := calculateMatchScore(d.Name(), searchTerm)
 				matchDict[d.Name()] = fileMatch{
 					score: score,
 					file:  d,
@@ -560,6 +560,12 @@ func SearchForMatches(root string, searchTerm string) (*FileNode, error) {
 		}
 		return nil
 	})
+	// TODO: Finish returning files in order of relevancy.
+	valueSlice := []float64{}
+	for _, fileMatch := range matchDict {
+		valueSlice = append(valueSlice, fileMatch.score)
+	}
+	sort.Float64s(valueSlice)
 	return nil, nil
 }
 
