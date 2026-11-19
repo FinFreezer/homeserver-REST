@@ -579,7 +579,8 @@ func calculateMatchScore(name string, searchTerm string) float64 {
 	log.Printf("Max partial score of %.2f\n", maxPartialScore)
 	for _, part := range fullParts {
 		if strings.Contains(standardizedName, part) {
-			totalScore += maxPartialScore
+			//adjustmentFactor := calcLengthAdjustment(standardizedName, part)
+			totalScore += maxPartialScore * 0.8 //Adjust for only including partial terms separately.
 		} else {
 			for i := len(part) - 1; i > 0; i-- {
 				if len(part[:i]) < 3 {
@@ -588,16 +589,7 @@ func calculateMatchScore(name string, searchTerm string) float64 {
 				}
 				log.Printf("Comparing %s to %s\n", part[:i], standardizedName)
 				if strings.Contains(standardizedName, part[:i]) {
-					start := strings.Index(standardizedName, part[:i])
-					matchingPart := standardizedName[start:]
-					end := strings.Index(matchingPart, " ")
-					if end == -1 {
-						end = len(matchingPart) - 1
-					}
-					log.Printf("%d, %d", start, end)
-					comparisonSlice := matchingPart[:end]
-					adjustmentFactor := (float64(len(part[:i])) / float64(len(comparisonSlice)))
-					log.Printf("Adjustment factor score %.2f\n", adjustmentFactor)
+					adjustmentFactor := calcLengthAdjustment(standardizedName, part[:i], part)
 					totalScore += maxPartialScore * adjustmentFactor
 					log.Printf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore)
 					break
@@ -608,7 +600,7 @@ func calculateMatchScore(name string, searchTerm string) float64 {
 	return totalScore
 }
 
-func calcLengthAdjustment(original string, part string) float64 {
+func calcLengthAdjustment(original string, part string, fullPart string) float64 {
 	start := strings.Index(original, part)
 	matchingPart := original[start:]
 	end := strings.Index(matchingPart, " ")
@@ -616,6 +608,7 @@ func calcLengthAdjustment(original string, part string) float64 {
 		end = len(matchingPart) - 1
 	}
 	comparisonSlice := matchingPart[:end]
-	adjustmentFactor := (float64(len(part)) / float64(len(comparisonSlice)))
+	partLengthFactor := float64(len(part)) / float64(len(fullPart))
+	adjustmentFactor := (float64(len(part)) / float64(len(comparisonSlice))) * partLengthFactor
 	return adjustmentFactor
 }
