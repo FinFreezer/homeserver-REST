@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -540,33 +541,56 @@ func VerifySession(user database.User, session database.Session) bool {
 	return false
 }
 
-func SearchForMatches(root string, searchTerm string) (*FileNode, error) {
-	type fileMatch struct {
-		score float64
-		file  fs.DirEntry
-		path  string
-	}
+type fileMatch struct {
+	score float64
+	file  fs.DirEntry
+	path  string
+}
+
+func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
 	matchDict := make(map[string]fileMatch)
+	scoreDict := make(map[float64][]string)
+	finalMatches := []fileMatch{}
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
-			if strings.Contains(d.Name(), searchTerm) {
+			name := strings.ToLower(d.Name())
+			term := strings.ToLower(searchTerm)
+			if strings.Contains(name, term) {
 				score := calculateMatchScore(d.Name(), searchTerm)
 				matchDict[d.Name()] = fileMatch{
 					score: score,
 					file:  d,
 					path:  filepath.Join(path, d.Name()),
 				}
+				scoreDict[score] = append(scoreDict[score], d.Name())
 			}
 		}
 		return nil
 	})
-	// TODO: Finish returning files in order of relevancy.
 	valueSlice := []float64{}
 	for _, fileMatch := range matchDict {
 		valueSlice = append(valueSlice, fileMatch.score)
 	}
 	sort.Float64s(valueSlice)
-	return nil, nil
+	slices.Reverse(valueSlice)
+	valueSlice = slices.Compact(valueSlice)
+	for _, value := range valueSlice {
+		matches := scoreDict[value]
+		for _, match := range matches {
+			fileMatch := matchDict[match]
+			finalMatches = append(finalMatches, fileMatch)
+			if len(finalMatches) > 9 {
+				break
+			}
+		}
+		if len(finalMatches) > 9 {
+			break
+		}
+	}
+	if len(finalMatches) < 1 {
+		return finalMatches, errors.New("No matches found.")
+	}
+	return finalMatches, nil
 }
 
 func calculateMatchScore(name string, searchTerm string) float64 {

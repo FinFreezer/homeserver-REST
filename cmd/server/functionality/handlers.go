@@ -20,6 +20,47 @@ import (
 	"github.com/google/uuid"
 )
 
+// GET /api/search/{term...}
+func (a *ApiConfig) SearchMedia(w http.ResponseWriter, r *http.Request) {
+	type SearchResult struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	type request struct {
+		SearchTerm string `json:"search"`
+	}
+	type response struct {
+		Results []SearchResult `json:"results"`
+	}
+	/*decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+	params := request{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 500, "Error decoding request.", err)
+		return
+	}
+	if searchTerm == "" {
+		respondWithError(w, 400, "No search found.", err)
+		return
+	}*/
+	searchTerm := r.PathValue("term")
+	matchSlice, err := SearchForMatches(a.AssetRoot, searchTerm)
+	if err != nil {
+		respondWithError(w, 204, err.Error(), err)
+		return
+	}
+	responseSlice := []SearchResult{}
+	for _, match := range matchSlice {
+		newResult := SearchResult{
+			Name: match.file.Name(),
+			Path: match.path,
+		}
+		responseSlice = append(responseSlice, newResult)
+	}
+	respondWithJSON(w, 200, responseSlice)
+}
+
 // POST /dev/wipeEntries
 func (a *ApiConfig) WipeGuestbook(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a request to wipe Guestbook database.")

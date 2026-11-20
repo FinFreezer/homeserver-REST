@@ -87,6 +87,7 @@ func main() {
 	newMux.HandleFunc("POST /api/logout", newApiConf.Logout)
 	newMux.HandleFunc("POST /api/addEntry", newApiConf.AddGuestbookEntry)
 	newMux.HandleFunc("GET /api/getEntries", newApiConf.GetGuestbookEntries)
+	newMux.HandleFunc("GET /api/search/{term...}", newApiConf.SearchMedia)
 	//newMux.HandleFunc("POST /dev/deleteEntry", newApiConf.DeleteGuestbookEntry)
 	//newMux.HandleFunc("POST /dev/wipeEntries", newApiConf.WipeGuestbook)
 	newMux.Handle("PUT /dev/cd", pg.CheckClearance(
