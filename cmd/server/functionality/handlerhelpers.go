@@ -548,6 +548,7 @@ type fileMatch struct {
 }
 
 func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
+	log.Printf("Starting search from  %s\n", root)
 	matchDict := make(map[string]fileMatch)
 	scoreDict := make(map[float64][]string)
 	finalMatches := []fileMatch{}
@@ -560,7 +561,7 @@ func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
 				matchDict[d.Name()] = fileMatch{
 					score: score,
 					file:  d,
-					path:  filepath.Join(path, d.Name()),
+					path:  path,
 				}
 				scoreDict[score] = append(scoreDict[score], d.Name())
 			}
