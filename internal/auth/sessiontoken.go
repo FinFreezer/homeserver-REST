@@ -27,7 +27,7 @@ func SetSessionCookie(w http.ResponseWriter, token string) {
 		Name:     "session_id",
 		Value:    token,
 		Path:     "/",
-		MaxAge:   int(defaultSessionTTL),
+		MaxAge:   int(defaultSessionTTL / time.Second),
 		HttpOnly: true,
 		Secure:   true, // Set to false for local development without HTTPS
 		SameSite: http.SameSiteStrictMode,

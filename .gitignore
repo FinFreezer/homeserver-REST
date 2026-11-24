@@ -6,3 +6,4 @@ assets/**/
 !.env.example
 *_test.go
 *.db
+*.mp4
