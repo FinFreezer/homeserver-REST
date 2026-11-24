@@ -84,7 +84,7 @@ func BlockCSRF(expectedOrigin string) middleware {
 				return
 			}
 			origin := request.Header.Get("Origin")
-			log.Printf("Serving request from Origin %s\n", origin)
+			log.Printf("Serving request from Origin %s. Expecting origin %s\n", origin, expectedOrigin)
 			var referer string
 			if origin == "" {
 				referer = request.Header.Get("Referer")

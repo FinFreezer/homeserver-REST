@@ -390,7 +390,6 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received login request.")
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
-
 	params := loginParameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
@@ -418,6 +417,7 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetAuthCookie(w, accessToken)*/
+	auth.ClearSessionCookie(w)
 	sessionToken := auth.GenerateSessionToken()
 	tokenHash := auth.HashSessionToken(sessionToken)
 	auth.SetSessionCookie(w, sessionToken)

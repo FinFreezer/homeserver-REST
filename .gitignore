@@ -5,3 +5,4 @@ assets/**/
 *localupdate.sh
 !.env.example
 *_test.go
+*.db
