@@ -106,8 +106,8 @@ func main() {
 	handler := pg.ApplyMiddleware(
 		newMux,
 		pg.IncludeSecureHeaders(backendorigin),
-		pg.BlockCSRF(os.Getenv("WEBSITE_HOST")),
-		pg.RateLimitRequests(),
+		pg.BlockCSRF(os.Getenv("WEBSITE_HOST"), programLogger),
+		pg.RateLimitRequests(programLogger),
 	)
 	//newServer := http.Server{Addr: ":8080", Handler: newMux}
 	//newServer := http.FileServer(http.Dir("./cmd/server"))

@@ -2,30 +2,34 @@ package functionality
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 )
 
-func respondWithError(w http.ResponseWriter, code int, msg string, err error) {
+func respondWithError(w http.ResponseWriter, code int, msg string, err error, logger *slog.Logger) {
 	if err != nil {
-		log.Println(err)
+		logger.Error("responding with an error",
+			slog.String("error", fmt.Sprintf("%+v", err)),
+		)
 	}
 	if code > 499 {
-		log.Printf("Responding with 5xx error: %s", msg)
+		logger.Error(fmt.Sprintf("responding with a 5xx error: %s", msg))
 	}
 	type errorResponse struct {
 		Error string `json:"error"`
 	}
 	respondWithJSON(w, code, errorResponse{
 		Error: msg,
-	})
+	}, logger)
 }
 
-func respondWithJSON(w http.ResponseWriter, code int, payload any) {
+func respondWithJSON(w http.ResponseWriter, code int, payload any, logger *slog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	dat, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Error marshaling JSON: %s", err)
+		logger.Error(fmt.Sprintf("Error marshaling JSON: %s", err),
+			slog.String("component", "respondwithjson"))
 		w.WriteHeader(500)
 		return
 	}

@@ -2,7 +2,7 @@ package functionality
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"slices"
@@ -44,35 +44,44 @@ func ApplyMiddleware(handler http.Handler, middlewareChain ...middleware) http.H
 func CheckClearance(next http.Handler, conf *ApiConfig) http.Handler {
 	return http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Println("Verifying authorization")
 			token, err := GetSessionToken(r)
 			if err != nil {
-				log.Println(err)
-				respondWithError(w, 403, "No active session found.", err)
+				conf.Logger.Error("error getting session token",
+					slog.String("component", "checkclearance"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
+				respondWithError(w, 403, "No active session found.", err, conf.Logger)
 				return
 			}
 			session, err := conf.Database.GetSession(r.Context(), auth.HashSessionToken(token))
 			if err != nil {
-				log.Println(err)
-				respondWithError(w, 403, "No active session found.", err)
+				conf.Logger.Error("error finding matching active session",
+					slog.String("component", "checkclearance"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
+				respondWithError(w, 403, "No active session found.", err, conf.Logger)
 				return
 			}
 			user, err := conf.Database.FindUserByID(r.Context(), session.UserID)
 			if err != nil {
-				log.Println(err)
-				respondWithError(w, 403, "No matching user found.", err)
+				conf.Logger.Error("error finding user matching the session",
+					slog.String("component", "checkclearance"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
+				respondWithError(w, 403, "No matching user found.", err, conf.Logger)
 				return
 			}
 			if VerifySession(user, session, conf.Logger) && user.IsAdmin == 1 {
-				log.Println("Served admin request.")
+				conf.Logger.Info("served admin request",
+					slog.String("user", fmt.Sprintf("%s", user.Name)))
 				next.ServeHTTP(w, r)
 				return
 			}
-			respondWithJSON(w, 403, "Missing permissions or invalid session.")
+			conf.Logger.Info("received a failed attempt at an admin action",
+				slog.String("name", fmt.Sprintf("%s", user.Name)),
+				slog.String("session-id-hash", fmt.Sprintf("%s", session.TokenHash)))
+			respondWithJSON(w, 403, "Missing permissions or invalid session.", conf.Logger)
 		})
 }
 
-func BlockCSRF(expectedOrigin string) middleware {
+func BlockCSRF(expectedOrigin string, logger *slog.Logger) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 			if request.Method != "POST" {
@@ -84,7 +93,7 @@ func BlockCSRF(expectedOrigin string) middleware {
 				return
 			}
 			origin := request.Header.Get("Origin")
-			log.Printf("Serving request from Origin %s. Expecting origin %s\n", origin, expectedOrigin)
+			logger.Debug(fmt.Sprintf("Serving request from Origin %s. Expecting origin %s\n", origin, expectedOrigin))
 			var referer string
 			if origin == "" {
 				referer = request.Header.Get("Referer")
@@ -123,18 +132,19 @@ func IncludeSecureHeaders(backendorigin string) middleware {
 	}
 }
 
-func RateLimitRequests() middleware {
+func RateLimitRequests(logger *slog.Logger) middleware {
 	type response struct {
 		Message string `json:"reply"`
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("Serving a request to %s\n", r.URL.Path)
 			host, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
-				log.Println(err)
-				respondWithError(w, 400, "Unable to verify connection.", err)
+				logger.Error("unable to parse host address from client",
+					slog.String("component", "ratelimitrequest"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
+				respondWithError(w, 400, "Unable to verify connection.", err, logger)
 				return
 			}
 			if strings.Contains(r.URL.Path, "verify") || strings.Contains(r.URL.Path, "Entries") {
@@ -142,25 +152,28 @@ func RateLimitRequests() middleware {
 				return
 			}
 			if limit, ok := LimitedRequests.KeyMap[host]; ok {
-				log.Printf("Serving session %+v\n", limit)
 				if limit.Now().UTC().After(limit.ExpiresIn) {
 					limit.Left = maxRequestsPerIP
 					limit.ExpiresIn = limit.Now().UTC().Add(defaultLimiterTime)
 				}
 				limit.Left -= 1
+				logger.Info("served existing client with limited request",
+					slog.String("path", fmt.Sprintf("%s", r.URL.Path)),
+					slog.String("ip", fmt.Sprintf("%s", redactFullIP(host))),
+					slog.Int("request-limit-left", limit.Left))
 				if limit.Left < 1 {
 					limitRefresh := time.Until(limit.ExpiresIn)
 					limitSeconds := int(limitRefresh.Seconds())
 					limitSecondsStr := strconv.Itoa(limitSeconds)
 					w.Header().Add("Retry-After", limitSecondsStr)
 					msg := fmt.Sprintf("Too many requests. Try again in %s seconds.", limitSecondsStr)
-					respondWithJSON(w, 429, response{Message: msg})
+					respondWithJSON(w, 429, response{Message: msg}, logger)
 					return
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
-			log.Printf("Serving new requests to client IP: %s\n", redactFullIP(host))
+			//log.Printf("Serving new requests to client IP: %s\n", redactFullIP(host))
 			//log.Printf("Serving new requests to client IP: %s\n", host)
 			newClient := LimiterClient{
 				Now:       time.Now().UTC,
@@ -169,6 +182,9 @@ func RateLimitRequests() middleware {
 				Left:      maxRequestsPerIP,
 			}
 			LimitedRequests.KeyMap[host] = &newClient
+			logger.Info("served new client with limited request",
+				slog.String("path", fmt.Sprintf("%s", r.URL.Path)),
+				slog.String("ip", fmt.Sprintf("%s", redactFullIP(host))))
 			next.ServeHTTP(w, r)
 		})
 	}

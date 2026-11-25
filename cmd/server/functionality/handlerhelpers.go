@@ -326,11 +326,11 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 		a.Logger.Error("error reading path",
 			slog.String("component", "serveplaylist"),
 			slog.String("error", fmt.Sprintf("%+v", err)))
-		respondWithError(w, 400, "Couldn't reach target.\n", err)
+		respondWithError(w, 400, "Couldn't reach target.\n", err, a.Logger)
 		return
 	}
 	if fi.IsDir() {
-		respondWithError(w, 400, "Can't stream a directory.\n", err)
+		respondWithError(w, 400, "Can't stream a directory.\n", err, a.Logger)
 		return
 	}
 	if playlist := createDefaultPlaylist(fullPath, a, a.Logger); playlist != nil {
@@ -343,7 +343,7 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 		io.Copy(w, playlist)
 		return
 	}
-	respondWithError(w, 400, "Unable to reach target.", err)
+	respondWithError(w, 400, "Unable to reach target.", err, a.Logger)
 }
 
 func sortFilesByNumber(files []os.DirEntry, logger *slog.Logger) []os.DirEntry {
