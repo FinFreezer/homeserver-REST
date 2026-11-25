@@ -63,7 +63,7 @@ func CheckClearance(next http.Handler, conf *ApiConfig) http.Handler {
 				respondWithError(w, 403, "No matching user found.", err)
 				return
 			}
-			if VerifySession(user, session) && user.IsAdmin == 1 {
+			if VerifySession(user, session, conf.Logger) && user.IsAdmin == 1 {
 				log.Println("Served admin request.")
 				next.ServeHTTP(w, r)
 				return

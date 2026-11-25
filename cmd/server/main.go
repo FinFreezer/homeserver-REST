@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -16,9 +16,10 @@ import (
 )
 
 func main() {
+	programLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	godotenv.Load()
 	user := os.Getenv("ADMIN_USER")
-	log.Printf("Env User: %s", user)
+	programLogger.Info(fmt.Sprintf("Env User: %s", user))
 	pass := os.Getenv("ADMIN_PASS")
 	args := os.Args
 	var newApiConf *pg.ApiConfig
@@ -29,9 +30,9 @@ func main() {
 			os.Exit(1)
 		}
 		if args[1] == "delete" && os.Getenv("PLATFORM") == "dev" {
-			newApiConf, err = pg.OpenDatabase()
+			newApiConf, err = pg.OpenDatabase(programLogger)
 			if err != nil {
-				log.Println(err)
+				programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
 				os.Exit(1)
 			}
 			newApiConf.Database.DeleteUsers(context.Background())
@@ -42,31 +43,31 @@ func main() {
 			fmt.Println("Please input the username and password you wish to use remotely.")
 			os.Exit(1)
 		}
-		newApiConf, err = pg.OpenDatabase()
+		newApiConf, err = pg.OpenDatabase(programLogger)
 		if err != nil {
-			log.Println(err)
+			programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
 			os.Exit(1)
 		}
 		pwHash, err := auth.CreatePasswordHash(args[2]) //Username + hashed password
 		if err != nil {
-			log.Println(err)
+			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
 		}
 		if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2]); !ok {
-			log.Println("Error logging in to the server.")
+			programLogger.Error("error adding administrative account, exiting")
 			os.Exit(1)
 		}
 	} else {
-		newApiConf, err = pg.OpenDatabase()
+		newApiConf, err = pg.OpenDatabase(programLogger)
 		if err != nil {
-			log.Println(err)
+			programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
 			os.Exit(1)
 		}
 		pwHash, err := auth.CreatePasswordHash(pass) //Username + hashed password
 		if err != nil {
-			log.Println(err)
+			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
 		}
 		if ok := pg.AddAdmin(newApiConf.Database, user, pwHash, pass); !ok {
-			log.Println("Error logging in to the server.")
+			programLogger.Error("error adding administrative account, exiting")
 			os.Exit(1)
 		}
 	}
@@ -113,10 +114,10 @@ func main() {
 	newServer := http.FileServer(http.Dir("./assets"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
-	log.Printf("Listening and Serving on port %s", outgoingPort)
+	programLogger.Info(fmt.Sprintf("Listening and Serving on port %s", outgoingPort))
 	//err = http.ListenAndServe(outgoingPort, newMux)
 	err = http.ListenAndServe(outgoingPort, handler)
 	if err != nil {
-		log.Fatal(err)
+		programLogger.Error(fmt.Sprintf("server shutting down with error: %+v", err))
 	}
 }

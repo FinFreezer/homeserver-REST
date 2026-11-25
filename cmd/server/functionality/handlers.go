@@ -45,7 +45,7 @@ func (a *ApiConfig) SearchMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}*/
 	searchTerm := r.PathValue("term")
-	matchSlice, err := SearchForMatches(a.AssetRoot, searchTerm)
+	matchSlice, err := SearchForMatches(a.AssetRoot, searchTerm, a.Logger)
 	if err != nil {
 		respondWithError(w, 204, err.Error(), err)
 		return
@@ -261,7 +261,7 @@ func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if VerifySession(user, session) {
+	if VerifySession(user, session, a.Logger) {
 		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
 		respondWithJSON(w, http.StatusOK,
 			response{
@@ -482,7 +482,7 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Issue finding directory.\n", err)
 		return
 	}
-	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt)
+	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt, a.Logger)
 	if err != nil {
 		log.Println(err)
 		respondWithError(w, 500, "Issue building directory tree-view.\n", err)
@@ -568,7 +568,7 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	//http.ServeContent(w, r, file.Name(), fi.ModTime(), file) Ready method.
 	rangeHeader := r.Header.Get("Range")
 	if rangeHeader != "" {
-		err, code := readByteRange(file, rangeHeader, w)
+		err, code := readByteRange(file, rangeHeader, w, a.Logger)
 		if err != nil && err != io.EOF && code != 0 {
 			respondWithError(w, code, "Problem streaming file.", err)
 			log.Println(err)
@@ -716,7 +716,7 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	file, err := os.Open(fullPath)
 	w.Header().Set("Cache-Control", "no-cache")
-	err, contentType := streamZipImages(fullPath, w, requestedPage)
+	err, contentType := streamZipImages(fullPath, w, requestedPage, a.Logger)
 	if err != nil {
 		respondWithError(w, 500, "Error opening file.\n", err)
 		return

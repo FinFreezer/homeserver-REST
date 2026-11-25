@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -31,13 +31,13 @@ type FileNode struct {
 
 type FileGroup map[string][]os.DirEntry
 
-func buildFileTree(fromPath string, dirOnly bool, depth int) (FileNode, error) {
+func buildFileTree(fromPath string, dirOnly bool, depth int, logger *slog.Logger) (FileNode, error) {
 	itemList, err := os.ReadDir(fromPath)
 	if err != nil {
 		return FileNode{}, err
 	}
 	//itemList = sortFilesByNumber(itemList)
-	itemList = doubleSort(itemList)
+	itemList = doubleSort(itemList, logger)
 	info, err := os.Stat(fromPath)
 	if err != nil || !info.IsDir() {
 		return FileNode{Name: info.Name(), IsDir: false}, err
@@ -49,7 +49,7 @@ func buildFileTree(fromPath string, dirOnly bool, depth int) (FileNode, error) {
 				childNode := FileNode{}
 				err = nil
 				if depth > 0 {
-					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1)
+					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1, logger)
 				} else {
 					childNode.Name = item.Name()
 					childNode.IsDir = item.IsDir()
@@ -76,7 +76,7 @@ func buildFileTree(fromPath string, dirOnly bool, depth int) (FileNode, error) {
 				childNode := FileNode{}
 				err = nil
 				if depth > 0 {
-					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1)
+					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1, logger)
 				} else {
 					childNode.Name = item.Name()
 					childNode.IsDir = item.IsDir()
@@ -93,7 +93,7 @@ func buildFileTree(fromPath string, dirOnly bool, depth int) (FileNode, error) {
 
 }
 
-func readByteRange(file *os.File, byteRange string, w http.ResponseWriter) (error, int) {
+func readByteRange(file *os.File, byteRange string, w http.ResponseWriter, logger *slog.Logger) (error, int) {
 	fileInfo, err := file.Stat()
 	fileSize := fileInfo.Size()
 	if err != nil {
@@ -113,14 +113,17 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter) (erro
 		writeData := make([]byte, maxBytesPerWrite)
 		startInt, err := strconv.Atoi(start)
 		if err != nil {
-			log.Println(start)
+			logger.Error("error converting byte range",
+				slog.String("starting bytes", start),
+				slog.String("component", "readbyterange"),
+			)
 			return errors.New("Error converting range."), 416
 		}
 
 		if end == "" && startInt < int(fileSize) {
 			w.Header().Set("Content-Length", strconv.Itoa(int(fileSize-int64(startInt)+1)))
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startInt, fileSize-1, fileSize))
-			log.Println("Streaming until the end.")
+			logger.Info("streaming full request with status 200")
 			w.WriteHeader(206)
 			for n := startInt; n < int(fileSize); {
 				nRead, err := file.ReadAt(writeData, int64(startInt))
@@ -149,13 +152,17 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter) (erro
 		} else {
 			endInt, err := strconv.Atoi(end)
 			if err != nil {
-				log.Println(end)
+				logger.Error("error converting byte range",
+					slog.String("starting bytes", end),
+					slog.String("component", "readbyterange"),
+				)
 				return errors.New("Error converting range."), 416
 			}
 			if startInt < endInt && endInt < int(fileSize) {
 				w.Header().Set("Content-Length", strconv.Itoa(int(endInt-startInt+1)))
 				w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startInt, endInt, fileSize))
-				log.Println("Streaming range.")
+				logger.Info("streaming byte range request with status 206",
+					slog.String("component", "readbyterange"))
 				w.WriteHeader(206)
 				for n := startInt; n < endInt; {
 					if endInt-n < len(writeData) {
@@ -199,15 +206,20 @@ func readContentType(f *os.File) (string, error) {
 	return http.DetectContentType(readBuffer), nil
 }
 
-func createDefaultPlaylist(path string, a *ApiConfig) *os.File {
-	log.Printf("Creating a playlist with current directory for %s", path)
+func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.File {
+	logger.Debug(fmt.Sprintf("Creating a playlist with current directory for %s", path),
+		slog.String("component", "createdefaultplaylist"))
 	streamingPath := os.Getenv("DST_SERVER") + os.Getenv("DFLT_PORT") + "/stream/"
 	startFrom := filepath.Base(path)
-	log.Printf("Start from episode '%s'\n", startFrom)
+	logger.Debug(fmt.Sprintf("Start from episode '%s'", startFrom),
+		slog.String("component", "createDefaultPlaylist"))
 	dir := filepath.Dir(path)
 	dirStat, err := os.Stat(dir)
 	if err != nil {
-		log.Println(err)
+		logger.Error("problem getting dirStat",
+			slog.String("component", "createdefaultplaylist"),
+			slog.String("error", fmt.Sprintf("%+v", err)),
+		)
 		return nil
 	}
 	if _, err := os.Stat(dir + "/playlist.m3u"); !errors.Is(err, os.ErrNotExist) {
@@ -216,34 +228,43 @@ func createDefaultPlaylist(path string, a *ApiConfig) *os.File {
 
 	playlist, err := os.Create(dir + "/playlist.m3u")
 	if err != nil {
-		log.Println(err)
+		logger.Error("problem creating file",
+			slog.String("component", "createdefaultplaylist"),
+			slog.String("error", fmt.Sprintf("%+v", err)),
+		)
 		return nil
 	}
 	playlist.Write([]byte("#EXTM3U\n"))
 	playlist.Write([]byte("#PLAYLIST: Streaming\n"))
 	if dirStat.IsDir() {
 		entryList, err := os.ReadDir(dir)
+		if err != nil {
+			logger.Error("problem reading directory",
+				slog.String("component", "createdefaultplaylist"),
+				slog.String("error", fmt.Sprintf("%+v", err)),
+			)
+			return nil
+		}
 		mediaEntryList := []os.DirEntry{}
 		for _, entry := range entryList {
 			if isValidType(entry.Name()) {
 				mediaEntryList = append(mediaEntryList, entry)
 			}
 		}
-		mediaEntryList = sortFilesByNumber(mediaEntryList)
+		mediaEntryList = sortFilesByNumber(mediaEntryList, logger)
 		mediaEntryList, episode := moveEpisodeToStart(mediaEntryList, startFrom)
 		lastEp := len(mediaEntryList)
-		if err != nil {
-			log.Println(err)
-			return nil
-		}
 		for _, entry := range mediaEntryList {
 			if episode > lastEp {
 				episode = 1
 			}
 			infoStr := fmt.Sprintf("Episode %d", episode)
-			urlPath, err := url.Parse(streamingPath + (cleanPath(dir+"/"+entry.Name(), a.CurrentRoot)))
+			urlPath, err := url.Parse(streamingPath + (cleanPath(dir+"/"+entry.Name(), a.CurrentRoot, logger)))
 			if err != nil {
-				log.Println(err)
+				logger.Error("error parsing url path",
+					slog.String("component", "createdefaultplaylist"),
+					slog.String("error", fmt.Sprintf("%+v", err)),
+				)
 				return nil
 			}
 			if !entry.IsDir() {
@@ -271,15 +292,17 @@ func isValidType(name string) bool {
 	return false
 }
 
-func cleanPath(internal string, currentRoot string) string {
-	log.Printf("Working with internal path of %s, and root of %s.\n", internal, currentRoot)
+func cleanPath(internal string, currentRoot string, logger *slog.Logger) string {
+	logger.Debug(fmt.Sprintf("Working with internal path of %s, and root of %s.", internal, currentRoot),
+		slog.String("component", "cleanPath"))
 	pathList := strings.Split(internal, "/")
 	rootList := strings.Split(currentRoot, "/")
 	rootList[0] = "stream"
 	pathList[0] = "stream"
 	relativeRoot := path.Join(rootList...) + "/"
 	newPath := path.Join(pathList...)
-	log.Printf("Moving %s to match %s", newPath, relativeRoot)
+	logger.Debug(fmt.Sprintf("Moving %s to match %s", newPath, relativeRoot),
+		slog.String("component", "cleanPath"))
 	pathToReturn := strings.ReplaceAll(newPath, relativeRoot, "")
 	return pathToReturn
 }
@@ -300,7 +323,9 @@ func moveEpisodeToStart(files []os.DirEntry, firstEp string) ([]os.DirEntry, int
 func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 	fi, err := os.Stat(fullPath)
 	if err != nil {
-		log.Println(err)
+		a.Logger.Error("error reading path",
+			slog.String("component", "serveplaylist"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 400, "Couldn't reach target.\n", err)
 		return
 	}
@@ -308,9 +333,10 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 		respondWithError(w, 400, "Can't stream a directory.\n", err)
 		return
 	}
-	if playlist := createDefaultPlaylist(fullPath, a); playlist != nil {
+	if playlist := createDefaultPlaylist(fullPath, a, a.Logger); playlist != nil {
 		defer playlist.Close()
-		log.Println("Responding with a playlist.")
+		a.Logger.Info("responding with a playlist",
+			slog.String("component", "serveplaylist"))
 		w.Header().Set("Content-Type", "audio/x-mpegurl")
 		w.Header().Set("Content-Disposition", "inline; filename=\"playlist.m3u\"")
 		w.WriteHeader(200)
@@ -320,15 +346,17 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 	respondWithError(w, 400, "Unable to reach target.", err)
 }
 
-func sortFilesByNumber(files []os.DirEntry) []os.DirEntry {
+func sortFilesByNumber(files []os.DirEntry, logger *slog.Logger) []os.DirEntry {
 	//log.Println("Sorting files..")
 	fileMap := make(map[int]os.DirEntry)
 	fileNumbers := []int{}
 	unNumberedFiles := []os.DirEntry{}
 	for _, file := range files {
-		fileNumber, err := findFileNumber(file.Name())
+		fileNumber, err := findFileNumber(file.Name(), logger)
 		if err != nil {
-			log.Printf("Error sorting files: %s", err)
+			logger.Error("error sorting files",
+				slog.String("component", "sortfilesbynumber"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 			return files
 		}
 		if fileNumber == -1 {
@@ -349,10 +377,10 @@ func sortFilesByNumber(files []os.DirEntry) []os.DirEntry {
 			fileNumbers = append(fileNumbers, fileNumber)
 		}
 	}
-	return append(sortFileSlice(fileMap, fileNumbers), unNumberedFiles...)
+	return append(sortFileSlice(fileMap, fileNumbers, logger), unNumberedFiles...)
 }
 
-func findFileNumber(filename string) (int, error) {
+func findFileNumber(filename string, logger *slog.Logger) (int, error) {
 	//log.Println("Reading file numbers...")
 	numberStart := -1
 	numberEnd := -1
@@ -378,7 +406,7 @@ func findFileNumber(filename string) (int, error) {
 	return strconv.Atoi(filename[numberStart:numberEnd])
 }
 
-func sortFileSlice(filemap map[int]os.DirEntry, fileslice []int) []os.DirEntry {
+func sortFileSlice(filemap map[int]os.DirEntry, fileslice []int, logger *slog.Logger) []os.DirEntry {
 	//log.Println("Sorting slice indexes...")
 	sort.Ints(fileslice)
 	sortedFiles := make([]os.DirEntry, len(fileslice))
@@ -415,7 +443,7 @@ func groupFilesByFirstChar(files []os.DirEntry) map[string][]os.DirEntry {
 	return groupMap
 }
 
-func doubleSort(files []os.DirEntry) []os.DirEntry {
+func doubleSort(files []os.DirEntry, logger *slog.Logger) []os.DirEntry {
 	groupMap := groupFilesByFirstChar(files)
 	keySlice := []string{}
 	overallFileSlice := []os.DirEntry{}
@@ -425,12 +453,12 @@ func doubleSort(files []os.DirEntry) []os.DirEntry {
 	sort.Strings(keySlice)
 
 	for _, key := range keySlice {
-		overallFileSlice = append(overallFileSlice, sortFilesByNumber(groupMap[key])...)
+		overallFileSlice = append(overallFileSlice, sortFilesByNumber(groupMap[key], logger)...)
 	}
 	return overallFileSlice
 }
 
-func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage int) (error, string) {
+func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage int, logger *slog.Logger) (error, string) {
 	cache := []*zip.File{}
 	contentType := ""
 	reader, err := zip.OpenReader(archivePath)
@@ -446,7 +474,7 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 	finalPage := len(cache) - 1
 
 	//Check limits.
-	log.Printf("Requested for page #%d to be displayed.\n", requestedPage)
+	logger.Info(fmt.Sprintf("received a request for page #%d to be displayed", requestedPage))
 	if requestedPage > finalPage {
 		overflow := (requestedPage - finalPage)
 		requestedPage = overflow
@@ -456,7 +484,7 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 		requestedPage = (finalPage - int(overflow))
 	}
 	if requestedPage < len(cache) {
-		log.Printf("Serving page #%d.\n", requestedPage)
+		logger.Info(fmt.Sprintf("serving page #%d", requestedPage))
 		imageReader, err := cache[requestedPage].Open()
 		if err != nil {
 			return err, ""
@@ -525,10 +553,12 @@ func GetSessionToken(r *http.Request) (string, error) {
 	return cookie.Value, nil
 }
 
-func VerifySession(user database.User, session database.Session) bool {
+func VerifySession(user database.User, session database.Session, logger *slog.Logger) bool {
 	expiresUTC, err := time.Parse("02/01/2006 - 15:04", session.ExpiresAt)
 	if err != nil {
-		log.Println("Error parsing date in VerifySession")
+		logger.Error("error parsing date",
+			slog.String("component", "verifysession"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		return false
 	}
 	if user.ID == session.UserID &&
@@ -547,8 +577,8 @@ type fileMatch struct {
 	path  string
 }
 
-func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
-	log.Printf("Starting search from  %s\n", root)
+func SearchForMatches(root string, searchTerm string, logger *slog.Logger) ([]fileMatch, error) {
+	logger.Debug(fmt.Sprintf("Starting search from  %s", root))
 	matchDict := make(map[string]fileMatch)
 	scoreDict := make(map[float64][]string)
 	finalMatches := []fileMatch{}
@@ -557,7 +587,7 @@ func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
 			name := strings.ToLower(d.Name())
 			term := strings.ToLower(searchTerm)
 			if strings.Contains(name, term) {
-				score := calculateMatchScore(d.Name(), searchTerm)
+				score := calculateMatchScore(d.Name(), searchTerm, logger)
 				matchDict[d.Name()] = fileMatch{
 					score: score,
 					file:  d,
@@ -594,7 +624,7 @@ func SearchForMatches(root string, searchTerm string) ([]fileMatch, error) {
 	return finalMatches, nil
 }
 
-func calculateMatchScore(name string, searchTerm string) float64 {
+func calculateMatchScore(name string, searchTerm string, logger *slog.Logger) float64 {
 	standardizedName := strings.ToLower(name)
 	standardizedTerm := strings.ToLower(searchTerm)
 	var totalScore float64 = 0.0
@@ -607,7 +637,7 @@ func calculateMatchScore(name string, searchTerm string) float64 {
 	}
 	fullParts := strings.Split(standardizedTerm, " ")
 	maxPartialScore := 1.0 / float64(len(fullParts))
-	log.Printf("Max partial score of %.2f\n", maxPartialScore)
+	logger.Debug(fmt.Sprintf("Max partial score of %.2f", maxPartialScore))
 	for _, part := range fullParts {
 		if strings.Contains(standardizedName, part) {
 			//adjustmentFactor := calcLengthAdjustment(standardizedName, part)
@@ -618,11 +648,11 @@ func calculateMatchScore(name string, searchTerm string) float64 {
 					totalScore += 0.0
 					break
 				}
-				log.Printf("Comparing %s to %s\n", part[:i], standardizedName)
+				logger.Debug(fmt.Sprintf("Comparing %s to %s\n", part[:i], standardizedName))
 				if strings.Contains(standardizedName, part[:i]) {
 					adjustmentFactor := calcLengthAdjustment(standardizedName, part[:i], part)
 					totalScore += maxPartialScore * adjustmentFactor
-					log.Printf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore)
+					logger.Debug(fmt.Sprintf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore))
 					break
 				}
 			}

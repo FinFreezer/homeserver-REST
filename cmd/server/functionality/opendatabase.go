@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 type ApiConfig struct {
 	Database       *database.Queries
 	Platform       string
+	Logger         *slog.Logger
 	Secret         string
 	ApiKey         string
 	Authorized     bool
@@ -23,7 +25,7 @@ type ApiConfig struct {
 	ActiveSessions *cfg.Sessions
 }
 
-func OpenDatabase() (*ApiConfig, error) {
+func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 	var db *sql.DB
 	var errLoop error
 	log.Println("Loading server data...")
@@ -76,6 +78,7 @@ func OpenDatabase() (*ApiConfig, error) {
 	newApiConf := ApiConfig{
 		Database:       dbQueries,
 		Platform:       platform,
+		Logger:         programLogger,
 		Secret:         secret,
 		ApiKey:         ApiKey,
 		Authorized:     false,
