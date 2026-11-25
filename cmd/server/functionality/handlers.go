@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,27 +27,14 @@ func (a *ApiConfig) SearchMedia(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		Path string `json:"path"`
 	}
-	type request struct {
-		SearchTerm string `json:"search"`
-	}
 	type response struct {
 		Results []SearchResult `json:"results"`
 	}
-	/*decoder := json.NewDecoder(r.Body)
-	defer r.Body.Close()
-	params := request{}
-	err := decoder.Decode(&params)
-	if err != nil {
-		respondWithError(w, 500, "Error decoding request.", err)
-		return
-	}
-	if searchTerm == "" {
-		respondWithError(w, 400, "No search found.", err)
-		return
-	}*/
 	searchTerm := r.PathValue("term")
 	matchSlice, err := SearchForMatches(a.AssetRoot, searchTerm, a.Logger)
 	if err != nil {
+		a.Logger.Error("responding with error",
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 204, err.Error(), err)
 		return
 	}
