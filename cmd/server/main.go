@@ -52,7 +52,7 @@ func main() {
 		if err != nil {
 			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
 		}
-		if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2]); !ok {
+		if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2], programLogger); !ok {
 			programLogger.Error("error adding administrative account, exiting")
 			os.Exit(1)
 		}
@@ -66,7 +66,7 @@ func main() {
 		if err != nil {
 			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
 		}
-		if ok := pg.AddAdmin(newApiConf.Database, user, pwHash, pass); !ok {
+		if ok := pg.AddAdmin(newApiConf.Database, user, pwHash, pass, programLogger); !ok {
 			programLogger.Error("error adding administrative account, exiting")
 			os.Exit(1)
 		}

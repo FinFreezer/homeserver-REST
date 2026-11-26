@@ -3,7 +3,7 @@ package functionality
 import (
 	"context"
 	"database/sql"
-	"log"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -28,28 +28,35 @@ type ApiConfig struct {
 func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 	var db *sql.DB
 	var errLoop error
-	log.Println("Loading server data...")
+	programLogger.Debug("loading server data...",
+		slog.String("component", "opendatabase"))
 	godotenv.Load()
 	platform := os.Getenv("PLATFORM")
 	secret := os.Getenv("SECRET")
 	if secret == "" {
-		log.Println("Unset secret variable, please include an environment variable.")
+		programLogger.Error("unset secret variable, please include an environment variable",
+			slog.String("component", "opendatabase"))
 	}
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
-		log.Println("Unset dbURL variable, please include an environment variable.")
+		programLogger.Error("unset dbURL variable, please include an environment variable",
+			slog.String("component", "opendatabase"))
 	}
 	ApiKey := os.Getenv("API_KEY")
 	newRoot := os.Getenv("ASSET_ROOT")
 	if newRoot == "" {
-		log.Println("Unset root directory, please include a root as an environment variable.")
+		programLogger.Error("unset root directory variable, please include root as an environment variable",
+			slog.String("component", "opendatabase"))
 	}
 	for i := 0; i < 10; i++ {
-		log.Printf("Calling sql.Open with %s", dbURL)
+		programLogger.Debug(fmt.Sprintf("calling sql.Open with %s", dbURL),
+			slog.String("component", "opendatabase"))
 		//db, errLoop = sql.Open("postgres", dbURL)
 		db, errLoop = sql.Open("sqlite", dbURL)
 		if errLoop != nil {
-			log.Printf("sql.Open failed: %v", errLoop)
+			programLogger.Error("sql.Open failure",
+				slog.String("component", "opendatabase"),
+				slog.String("error", fmt.Sprintf("%+v", errLoop)))
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -62,13 +69,17 @@ func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 		time.Sleep(2 * time.Second)
 	}
 	if errLoop != nil {
-		log.Println(errLoop)
+		programLogger.Error("error reaching database",
+			slog.String("component", "opendatabase"),
+			slog.String("error", fmt.Sprintf("%+v", errLoop)))
 	}
 	dbQueries := database.New(db)
 	sessions := cfg.NewSessions()
 	dbSessions, err := dbQueries.GetAllSessions(context.Background())
 	if err != nil {
-		log.Println(err)
+		programLogger.Error("error loading sessions",
+			slog.String("component", "opendatabase"),
+			slog.String("error", fmt.Sprintf("%+v", errLoop)))
 	}
 	expired := sessions.InitSessions(dbSessions)
 	for _, session := range expired {
