@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -51,7 +50,6 @@ func (a *ApiConfig) SearchMedia(w http.ResponseWriter, r *http.Request) {
 
 // POST /dev/wipeEntries
 func (a *ApiConfig) WipeGuestbook(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received a request to wipe Guestbook database.")
 	type request struct {
 		IsAuthorized bool `json:"hasPrivilege"`
 	}
@@ -76,6 +74,7 @@ func (a *ApiConfig) WipeGuestbook(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Error wiping guestbook entries.", err, a.Logger)
 		return
 	}
+	a.Logger.Info("served successfull request to wipe guestbook")
 	respondWithJSON(w, 200, response{
 		Message: "Guestbook cleared successfully.",
 	}, a.Logger)
@@ -98,7 +97,6 @@ func (a *ApiConfig) DeleteGuestbookEntry(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, 500, "Couldn't create guestbook database entry.", err, a.Logger)
 		return
 	}
-	log.Printf("Received a request to delete guestbook entry with id %s.\n", params.EntryId)
 	deleteId, err := uuid.Parse(params.EntryId)
 	if err != nil {
 		respondWithError(w, 500, "Faulty message ID.", err, a.Logger)
@@ -109,6 +107,7 @@ func (a *ApiConfig) DeleteGuestbookEntry(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, 500, "Faulty message ID.", err, a.Logger)
 		return
 	}
+	a.Logger.Info(fmt.Sprintf("succesfully served a request to delete guestbook entry with id %s", params.EntryId))
 	respondWithJSON(w, 200, response{
 		Message: fmt.Sprintf("Deleted message with ID %s succesfully.\n", foundMessage.ID),
 	}, a.Logger)
@@ -116,7 +115,6 @@ func (a *ApiConfig) DeleteGuestbookEntry(w http.ResponseWriter, r *http.Request)
 
 // GET /api/getEntries
 func (a *ApiConfig) GetGuestbookEntries(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received a request to serve guestbook data.")
 	type GuestbookBackend struct {
 		ID        string `json:"ID"`
 		CreatedAt string `json:"CreatedAt"`
@@ -154,6 +152,7 @@ func (a *ApiConfig) GetGuestbookEntries(w http.ResponseWriter, r *http.Request) 
 			Content:   entry.Content,
 		})
 	}
+	a.Logger.Info("succesfully served a request to get guestbook data")
 	respondWithJSON(w, 200, response{
 		Entries: ResponseEntries,
 		Message: "Data successfully fetched.",
@@ -179,7 +178,6 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Couldn't create guestbook database entry.", err, a.Logger)
 		return
 	}
-	log.Printf("Received a request to add entry to guestbook database with id %s.\n", params.EntryId)
 	EntryIdValue, err := uuid.Parse(params.EntryId)
 	if err != nil {
 		respondWithError(w, 500, "Unable to parse message ID", err, a.Logger)
@@ -206,6 +204,7 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Error creating new guestbook entry to database.", err, a.Logger)
 		return
 	}
+	a.Logger.Info(fmt.Sprintf("succesfully served a request to create a new guestbook entry for ID %s", params.EntryId))
 	respondWithJSON(w, 200, response{
 		Message: "Guestbook entry added successfully.",
 	}, a.Logger)
@@ -213,7 +212,6 @@ func (a *ApiConfig) AddGuestbookEntry(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/verify
 func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received verification request.")
 	type response struct {
 		Message       string `json:"reply"`
 		Username      string `json:"username,omitempty"`
@@ -250,6 +248,7 @@ func (a *ApiConfig) VerifyAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if VerifySession(user, session, a.Logger) {
+		a.Logger.Info(fmt.Sprintf("succesfully server a verification request for user %s", user.Name))
 		responseMsg := fmt.Sprintf("Succesfully logged in as %s.\n", user.Name)
 		respondWithJSON(w, http.StatusOK,
 			response{
@@ -277,9 +276,10 @@ func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
 
 	params := logoutParams{}
 	err := decoder.Decode(&params)
-	log.Printf("Received logout request for %s.\n", params.Name)
 	if err != nil {
-		log.Printf("Error decoding log-out request: %s\n", err.Error())
+		a.Logger.Error("error decoding log-out request",
+			slog.String("component", "logout"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		auth.ClearSessionCookie(w)
 		respondWithJSON(w, http.StatusOK, response{
 			Message: "Cleared current session.",
@@ -291,11 +291,15 @@ func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
 		// Optional: Also clear the token from database
 		token, err := GetSessionToken(r)
 		if err != nil {
-			log.Println(err.Error())
+			a.Logger.Error("error reading session token",
+				slog.String("component", "logout"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 		}
 		_, err = a.Database.DeleteSession(r.Context(), auth.HashSessionToken(token))
 		if err != nil {
-			log.Printf("Warning: Failed to clear session from database for user %s: %v.\n", params.Name, err)
+			a.Logger.Error(fmt.Sprintf("failed to clear session from database for user %s", params.Name),
+				slog.String("component", "logout"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 		}
 		_, err = a.Database.UpdateUserToken(r.Context(),
 			database.UpdateUserTokenParams{
@@ -304,7 +308,9 @@ func (a *ApiConfig) Logout(w http.ResponseWriter, r *http.Request) {
 			},
 		)
 		if err != nil {
-			log.Printf("Warning: Failed to clear token from database for user %s: %v.\n", params.Name, err)
+			a.Logger.Error(fmt.Sprintf("failed to clear token from database for user %s", params.Name),
+				slog.String("component", "logout"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 		}
 		auth.ClearSessionCookie(w)
 		respondWithJSON(w, http.StatusOK, response{
@@ -340,7 +346,6 @@ func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) 
 		respondWithError(w, 500, "Couldn't decode parameters", err, a.Logger)
 		return
 	}
-	log.Printf("Received a registration request for %s.\n", params.Name)
 	if pwHash, err = auth.CreatePasswordHash(params.Password); err != nil {
 		respondWithError(w, 500, "Error creating password hash.", err, a.Logger)
 		return
@@ -358,6 +363,7 @@ func (a *ApiConfig) RegisterRegularUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	a.Logger.Info(fmt.Sprintf("server a successful registration request for new user %s", dbUser.Name))
 	respondWithJSON(w, 200, response{
 		Message: fmt.Sprintf("Succesfully registered user %s.\n", dbUser.Name),
 	}, a.Logger)
@@ -375,7 +381,6 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		Authorization bool   `json:"authorization"`
 	}
 
-	log.Println("Received login request.")
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 	params := loginParameters{}
@@ -425,6 +430,7 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Unable to create new session.", err, a.Logger)
 		return
 	}
+	a.Logger.Info(fmt.Sprintf("served successful login request for use %s", dbUser.Name))
 	respondWithJSON(w, http.StatusOK,
 		response{
 			Message:       responseMsg,
@@ -445,15 +451,14 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 		Message string   `json:"reply"`
 		Files   FileNode `json:"directory"`
 	}
-	if a.CurrentRoot == "" || r.PathValue("path") == "" {
-		log.Println("Panic")
-	}
 	fullPath := a.CurrentRoot + r.PathValue("path")
 	dirOnlyFlag := r.URL.Query().Get("dirOnly")
 	listDepthStr := r.URL.Query().Get("recDepth")
 	listDepthInt, err := strconv.Atoi(listDepthStr)
 	if err != nil {
-		log.Println(err)
+		a.Logger.Error("invalid conversion from string to integer",
+			slog.String("component", "listcontents"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		listDepthInt = 0
 	}
 	if dirOnlyFlag == "true" {
@@ -461,21 +466,26 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 	} else {
 		dirOnly = false
 	}
-	log.Println(r.PathValue("path"))
-	log.Printf("Received a request to list contents at %s with dirOnly value of %v and depth of %d.\n",
-		fullPath, dirOnly, listDepthInt)
+	a.Logger.Debug(fmt.Sprintf("received a request to list contents at %s + %s with dirOnly value of %v and depth of %d",
+		a.CurrentRoot, r.PathValue("path"), dirOnly, listDepthInt))
 	fi, err := os.Stat(fullPath)
 	if err != nil || !fi.IsDir() {
-		log.Println(err)
+		a.Logger.Error("unable to read directory",
+			slog.String("component", "listcontents"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 400, "Issue finding directory.\n", err, a.Logger)
 		return
 	}
 	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt, a.Logger)
 	if err != nil {
-		log.Println(err)
+		a.Logger.Error("failed to build internal file tree",
+			slog.String("component", "listcontents"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 500, "Issue building directory tree-view.\n", err, a.Logger)
 		return
 	}
+	a.Logger.Info(fmt.Sprintf("successfully served a request to list files in %s", fullPath),
+		slog.String("component", "listcontents"))
 	msg := fmt.Sprintf("Listing files in %s.\n", fullPath)
 	respondWithJSON(w, http.StatusOK,
 		ListDirResponse{
@@ -491,7 +501,6 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"reply"`
 	}
 	requestPath := r.PathValue("path")
-	log.Printf("Received a request with path %s.\n", requestPath)
 	var fullPath string
 	//fullPath := filepath.Join(a.CurrentRoot, r.PathValue("path"))
 	if strings.Contains(requestPath, a.CurrentRoot) {
@@ -499,23 +508,29 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fullPath = filepath.Join(a.CurrentRoot, r.PathValue("path"))
 	}
-	log.Printf("Received a request to stream path %s.\n", fullPath)
+	a.Logger.Debug(fmt.Sprintf("received a request to stream path %s", fullPath),
+		slog.String("component", "streamvideo"))
 	fi, err := os.Stat(fullPath)
 	if err != nil {
 		dir := filepath.Dir(fullPath)
 		if dirStat, err := os.Stat(dir); dirStat.IsDir() && err == nil {
-			log.Println("Looking for closest match.")
+			a.Logger.Debug("looking for closest match",
+				slog.String("component", "streamvideo"))
 			fileToMatch := filepath.Base(fullPath)
 			closestMatch, err := findClosestMatch(dir, fileToMatch)
-			log.Printf("Matched %s to %s.\n", fileToMatch, closestMatch)
+			a.Logger.Debug(fmt.Sprintf("matched %s to %s", fileToMatch, closestMatch))
 			if err != nil {
-				log.Println(err)
+				a.Logger.Error("error finding match",
+					slog.String("component", "streamvideo"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
 				respondWithError(w, 400, "Couldn't reach file or directory.\n", err, a.Logger)
 				return
 			}
 			fullPath = closestMatch
 		} else {
-			log.Println(err)
+			a.Logger.Error("error reading path or invalid target",
+				slog.String("component", "streamvideo"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 			respondWithError(w, 400, "Couldn't reach file or directory.\n", err, a.Logger)
 			return
 		}
@@ -544,11 +559,14 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 	contentType, err := readContentType(file)
 	if err != nil {
-		log.Println(err)
+		a.Logger.Error("error determining content type",
+			slog.String("component", "streamvideo"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 500, "Internal error.", err, a.Logger)
 		return
 	}
-	log.Printf("Serving filetype %s.\n", contentType)
+	a.Logger.Debug(fmt.Sprintf("serving filetype %s", contentType),
+		slog.String("component", "streamvideo"))
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -559,7 +577,9 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		err, code := readByteRange(file, rangeHeader, w, a.Logger)
 		if err != nil && err != io.EOF && code != 0 {
 			respondWithError(w, code, "Problem streaming file.", err, a.Logger)
-			log.Println(err)
+			a.Logger.Error("error reading file byterange",
+				slog.String("component", "streamvideo"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 			return
 		} else {
 			return
@@ -567,7 +587,7 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		w.WriteHeader(200)
-		log.Println("Streaming full file.")
+		a.Logger.Info("successfully serving full-file streaming request")
 		maxBytesPerWrite := 5 << 20
 		//maxBytesPerWrite := 5 << 10
 		writeData := make([]byte, maxBytesPerWrite)
@@ -578,7 +598,9 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 			if nFile == 0 {
 				_, err = w.Write(writeData)
 				if err != nil {
-					log.Println(err)
+					a.Logger.Error("error writing data to response",
+						slog.String("component", "streamvideo"),
+						slog.String("error", fmt.Sprintf("%+v", err)))
 					return
 				}
 				if flusher, ok := w.(http.Flusher); ok {
@@ -590,7 +612,9 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 			//_, err = io.Copy(writeBuffer, file)
 			_, err = w.Write(writeData[:nFile])
 			if err != nil {
-				log.Println(err)
+				a.Logger.Error("error writing data to response",
+					slog.String("component", "streamvideo"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
 				return
 			}
 		}
@@ -609,7 +633,9 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 	reqData := Request{}
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&reqData); err != nil {
-		log.Println(err)
+		a.Logger.Error("error decoding request",
+			slog.String("component", "moverootdirectory"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		respondWithError(w, 500, "Decoder error", err, a.Logger)
 		return
 	}
@@ -627,22 +653,26 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !strings.HasPrefix(absNewPath+string(filepath.Separator), absRoot+string(filepath.Separator)) {
-		log.Printf("Path '%s' is not within allowed bounds of '%s'.\n", absNewPath, absRoot)
+		a.Logger.Error(fmt.Sprintf("trying to reach out of bounds path, '%s' is not within allowed bounds of '%s'", absNewPath, absRoot),
+			slog.String("component", "moverootdirectory"))
 		respondWithError(w, 403, "New root out of allowed bounds.", err, a.Logger)
 		return
 	}
-	log.Printf("Received a request to move root to '%s'.\n", newRoot)
+	a.Logger.Debug(fmt.Sprintf("received a request to move root to '%s'", newRoot),
+		slog.String("component", "moverootdirectory"))
 	fi, err := os.Stat(newRoot)
 	if err != nil {
 		dir := filepath.Dir(filepath.Clean(newRoot))
 		dirToFind := filepath.Base(newRoot)
-		log.Printf("Finding optional matches for path %s.\n", dir)
+		a.Logger.Debug(fmt.Sprintf("finding optional matches for path %s.\n", dir),
+			slog.String("component", "moverootdirectory"))
 		closestMatch, err := findClosestMatch(dir, dirToFind)
 		if err != nil {
 			respondWithError(w, 400, "Error finding new root.", err, a.Logger)
 			return
 		} else {
-			log.Printf("Matched %s to %s.\n", dirToFind, closestMatch)
+			a.Logger.Debug(fmt.Sprintf("matched %s to %s.\n", dirToFind, closestMatch),
+				slog.String("component", "moverootdirectory"))
 			newRoot = closestMatch
 		}
 	}
@@ -652,8 +682,9 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.CurrentRoot = newRoot
+	a.Logger.Info(fmt.Sprintf("successfully served a request to move root to %s", newRoot))
 	respondWithJSON(w, 200, response{
-		Message: "Root moved succesfully.",
+		Message: "Root moved successfully.",
 	}, a.Logger)
 }
 
@@ -667,7 +698,6 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithError(w, 500, "Error finding page.", err, a.Logger)
 	}
-	log.Printf("Received a request with path %s.\n", requestPath)
 	var fullPath string
 	//fullPath := filepath.Join(a.CurrentRoot, r.PathValue("path"))
 	if strings.Contains(requestPath, a.CurrentRoot) {
@@ -675,24 +705,33 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 	} else {
 		fullPath = filepath.Join(a.CurrentRoot, r.PathValue("path"))
 	}
-	log.Printf("Received a request to stream image archive at %s.\n", fullPath)
+	a.Logger.Debug(fmt.Sprintf("received a request to stream image archive at %s.\n", fullPath),
+		slog.String("component", "streamarchive"))
 	fi, err := os.Stat(fullPath)
 	if err != nil {
-		log.Println(err)
+		a.Logger.Error("error reading file",
+			slog.String("component", "streamarchive"),
+			slog.String("error", fmt.Sprintf("%+v", err)))
 		dir := filepath.Dir(fullPath)
 		if dirStat, err := os.Stat(dir); dirStat.IsDir() && err == nil {
-			log.Println("Looking for closest match.")
+			a.Logger.Debug("looking for closest match",
+				slog.String("component", "streamarchive"))
 			fileToMatch := filepath.Base(fullPath)
 			closestMatch, err := findClosestMatch(dir, fileToMatch)
-			log.Printf("Matched %s to %s.\n", fileToMatch, closestMatch)
+			a.Logger.Debug(fmt.Sprintf("matched %s to %s.\n", fileToMatch, closestMatch),
+				slog.String("component", "streamarchive"))
 			if err != nil {
-				log.Println(err)
+				a.Logger.Error("error finding matching files",
+					slog.String("component", "streamarchive"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
 				respondWithError(w, 400, "Couldn't reach file or directory.\n", err, a.Logger)
 				return
 			}
 			fullPath = closestMatch
 		} else {
-			log.Println(err)
+			a.Logger.Error("error reading file or invalid path",
+				slog.String("component", "streamarchive"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 			respondWithError(w, 400, "Couldn't reach file or directory.\n", err, a.Logger)
 			return
 		}
@@ -716,10 +755,10 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Internal error.", err)
 		return
 	}*/
-	log.Printf("Serving filetype %s.\n", contentType)
+	a.Logger.Debug(fmt.Sprintf("serving filetype %s", contentType),
+		slog.String("component", "streamarchive"))
 	//w.Header().Set("Content-Type", contentType)
 	//http.ServeContent(w, r, file.Name(), fi.ModTime(), file) Ready method.
-	log.Println("Streaming full file.")
 }
 
 // POST /dev/remoteUpdate
@@ -748,13 +787,16 @@ func (a *ApiConfig) UpdateAndRestart(w http.ResponseWriter, r *http.Request) {
 
 		// Execute update completely detached
 		if err := runUpdateDetached(); err != nil {
-			log.Printf("Update failed: %v.\n", err)
+			a.Logger.Error("update failed",
+				slog.String("component", "updateandrestart"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
 		}
 	}()
 
 	go func() {
 		time.Sleep(2 * time.Second)
-		log.Fatal("Shutting down for update...")
+		a.Logger.Info("server shutting down for an update")
+		os.Exit(0)
 	}()
 }
 
