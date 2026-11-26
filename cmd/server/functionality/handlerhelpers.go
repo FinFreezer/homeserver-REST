@@ -653,12 +653,12 @@ func calculateMatchScore(name string, searchTerm string, logger *slog.Logger) fl
 					totalScore += 0.0
 					break
 				}
-				logger.Debug(fmt.Sprintf("Comparing %s to %s\n", part[:i], standardizedName),
+				logger.Debug(fmt.Sprintf("Comparing %s to %s", part[:i], standardizedName),
 					slog.String("component", "calculatematchscore"))
 				if strings.Contains(standardizedName, part[:i]) {
 					adjustmentFactor := calcLengthAdjustment(standardizedName, part[:i], part)
 					totalScore += maxPartialScore * adjustmentFactor
-					logger.Debug(fmt.Sprintf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore),
+					logger.Debug(fmt.Sprintf("Scoring term %s in %s as %.2f", standardizedName, part[:i], totalScore),
 						slog.String("component", "calculatematchscore"))
 					break
 				}
