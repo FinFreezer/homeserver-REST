@@ -32,7 +32,8 @@ func main() {
 		if args[1] == "delete" && os.Getenv("PLATFORM") == "dev" {
 			newApiConf, err = pg.OpenDatabase(programLogger)
 			if err != nil {
-				programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
+				programLogger.Error(fmt.Sprintf("error opening database: %+v", err),
+					slog.String("component", "main"))
 				os.Exit(1)
 			}
 			newApiConf.Database.DeleteUsers(context.Background())
@@ -45,29 +46,35 @@ func main() {
 		}
 		newApiConf, err = pg.OpenDatabase(programLogger)
 		if err != nil {
-			programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
+			programLogger.Error(fmt.Sprintf("error opening database: %+v", err),
+				slog.String("component", "main"))
 			os.Exit(1)
 		}
 		pwHash, err := auth.CreatePasswordHash(args[2]) //Username + hashed password
 		if err != nil {
-			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
+			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err),
+				slog.String("component", "main"))
 		}
 		if ok := pg.AddAdmin(newApiConf.Database, args[1], pwHash, args[2], programLogger); !ok {
-			programLogger.Error("error adding administrative account, exiting")
+			programLogger.Error("error adding administrative account, exiting",
+				slog.String("component", "main"))
 			os.Exit(1)
 		}
 	} else {
 		newApiConf, err = pg.OpenDatabase(programLogger)
 		if err != nil {
-			programLogger.Error(fmt.Sprintf("error opening database: %+v", err))
+			programLogger.Error(fmt.Sprintf("error opening database: %+v", err),
+				slog.String("component", "main"))
 			os.Exit(1)
 		}
 		pwHash, err := auth.CreatePasswordHash(pass) //Username + hashed password
 		if err != nil {
-			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err))
+			programLogger.Error(fmt.Sprintf("password hash creation failed: %+v", err),
+				slog.String("component", "main"))
 		}
 		if ok := pg.AddAdmin(newApiConf.Database, user, pwHash, pass, programLogger); !ok {
-			programLogger.Error("error adding administrative account, exiting")
+			programLogger.Error("error adding administrative account, exiting",
+				slog.String("component", "main"))
 			os.Exit(1)
 		}
 	}
@@ -114,10 +121,12 @@ func main() {
 	newServer := http.FileServer(http.Dir("./assets"))
 	newMux.Handle("/", newServer)
 	//err = newServer.ListenAndServe()
-	programLogger.Info(fmt.Sprintf("Listening and Serving on port %s", outgoingPort))
+	programLogger.Info(fmt.Sprintf("Listening and Serving on port %s", outgoingPort),
+		slog.String("component", "main"))
 	//err = http.ListenAndServe(outgoingPort, newMux)
 	err = http.ListenAndServe(outgoingPort, handler)
 	if err != nil {
-		programLogger.Error(fmt.Sprintf("server shutting down with error: %+v", err))
+		programLogger.Error(fmt.Sprintf("server shutting down with error: %+v", err),
+			slog.String("component", "main"))
 	}
 }

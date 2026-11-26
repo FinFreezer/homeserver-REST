@@ -123,7 +123,8 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter, logge
 		if end == "" && startInt < int(fileSize) {
 			w.Header().Set("Content-Length", strconv.Itoa(int(fileSize-int64(startInt)+1)))
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startInt, fileSize-1, fileSize))
-			logger.Info("streaming full request with status 200")
+			logger.Info("streaming full request with status 200",
+				slog.String("component", "readbyterange"))
 			w.WriteHeader(206)
 			for n := startInt; n < int(fileSize); {
 				nRead, err := file.ReadAt(writeData, int64(startInt))
@@ -352,7 +353,7 @@ func sortFilesByNumber(files []os.DirEntry, logger *slog.Logger) []os.DirEntry {
 	fileNumbers := []int{}
 	unNumberedFiles := []os.DirEntry{}
 	for _, file := range files {
-		fileNumber, err := findFileNumber(file.Name(), logger)
+		fileNumber, err := findFileNumber(file.Name())
 		if err != nil {
 			logger.Error("error sorting files",
 				slog.String("component", "sortfilesbynumber"),
@@ -377,10 +378,10 @@ func sortFilesByNumber(files []os.DirEntry, logger *slog.Logger) []os.DirEntry {
 			fileNumbers = append(fileNumbers, fileNumber)
 		}
 	}
-	return append(sortFileSlice(fileMap, fileNumbers, logger), unNumberedFiles...)
+	return append(sortFileSlice(fileMap, fileNumbers), unNumberedFiles...)
 }
 
-func findFileNumber(filename string, logger *slog.Logger) (int, error) {
+func findFileNumber(filename string) (int, error) {
 	//log.Println("Reading file numbers...")
 	numberStart := -1
 	numberEnd := -1
@@ -406,7 +407,7 @@ func findFileNumber(filename string, logger *slog.Logger) (int, error) {
 	return strconv.Atoi(filename[numberStart:numberEnd])
 }
 
-func sortFileSlice(filemap map[int]os.DirEntry, fileslice []int, logger *slog.Logger) []os.DirEntry {
+func sortFileSlice(filemap map[int]os.DirEntry, fileslice []int) []os.DirEntry {
 	//log.Println("Sorting slice indexes...")
 	sort.Ints(fileslice)
 	sortedFiles := make([]os.DirEntry, len(fileslice))
@@ -474,7 +475,8 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 	finalPage := len(cache) - 1
 
 	//Check limits.
-	logger.Info(fmt.Sprintf("received a request for page #%d to be displayed", requestedPage))
+	logger.Info(fmt.Sprintf("received a request for page #%d to be displayed", requestedPage),
+		slog.String("component", "streamzipimages"))
 	if requestedPage > finalPage {
 		overflow := (requestedPage - finalPage)
 		requestedPage = overflow
@@ -484,7 +486,8 @@ func streamZipImages(archivePath string, w http.ResponseWriter, requestedPage in
 		requestedPage = (finalPage - int(overflow))
 	}
 	if requestedPage < len(cache) {
-		logger.Info(fmt.Sprintf("serving page #%d", requestedPage))
+		logger.Info(fmt.Sprintf("serving page #%d", requestedPage),
+			slog.String("component", "streamzipimages"))
 		imageReader, err := cache[requestedPage].Open()
 		if err != nil {
 			return err, ""
@@ -578,7 +581,8 @@ type fileMatch struct {
 }
 
 func SearchForMatches(root string, searchTerm string, logger *slog.Logger) ([]fileMatch, error) {
-	logger.Debug(fmt.Sprintf("Starting search from  %s", root))
+	logger.Debug(fmt.Sprintf("Starting search from  %s", root),
+		slog.String("component", "searchformatches"))
 	matchDict := make(map[string]fileMatch)
 	scoreDict := make(map[float64][]string)
 	finalMatches := []fileMatch{}
@@ -637,7 +641,8 @@ func calculateMatchScore(name string, searchTerm string, logger *slog.Logger) fl
 	}
 	fullParts := strings.Split(standardizedTerm, " ")
 	maxPartialScore := 1.0 / float64(len(fullParts))
-	logger.Debug(fmt.Sprintf("Max partial score of %.2f", maxPartialScore))
+	logger.Debug(fmt.Sprintf("Max partial score of %.2f", maxPartialScore),
+		slog.String("component", "calculatematchscore"))
 	for _, part := range fullParts {
 		if strings.Contains(standardizedName, part) {
 			//adjustmentFactor := calcLengthAdjustment(standardizedName, part)
@@ -648,11 +653,13 @@ func calculateMatchScore(name string, searchTerm string, logger *slog.Logger) fl
 					totalScore += 0.0
 					break
 				}
-				logger.Debug(fmt.Sprintf("Comparing %s to %s\n", part[:i], standardizedName))
+				logger.Debug(fmt.Sprintf("Comparing %s to %s\n", part[:i], standardizedName),
+					slog.String("component", "calculatematchscore"))
 				if strings.Contains(standardizedName, part[:i]) {
 					adjustmentFactor := calcLengthAdjustment(standardizedName, part[:i], part)
 					totalScore += maxPartialScore * adjustmentFactor
-					logger.Debug(fmt.Sprintf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore))
+					logger.Debug(fmt.Sprintf("Scoring term %s in %s as %.2f\n", standardizedName, part[:i], totalScore),
+						slog.String("component", "calculatematchscore"))
 					break
 				}
 			}
