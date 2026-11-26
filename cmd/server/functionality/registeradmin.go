@@ -17,7 +17,7 @@ func AddAdmin(db *database.Queries, username, passwordhash, password string, log
 		PasswordHash: passwordhash,
 		IsAdmin:      1,
 	}
-	logger.Debug("looking if user exists")
+	logger.Debug("looking if user exists", slog.String("component", "addadmin"))
 	user, err := db.FindUser(context.Background(), params.Name)
 	if err == nil {
 		match, err := auth.CheckPassword(password, user.PasswordHash)

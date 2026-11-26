@@ -45,6 +45,8 @@ func (a *ApiConfig) SearchMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		responseSlice = append(responseSlice, newResult)
 	}
+	a.Logger.Info("successfully found match(es)",
+		slog.String("component", "searchmedia"))
 	respondWithJSON(w, 200, responseSlice, a.Logger)
 }
 

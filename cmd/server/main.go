@@ -16,8 +16,15 @@ import (
 )
 
 func main() {
-	programLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	godotenv.Load()
+	platform := os.Getenv("PLATFORM")
+	var newLogHandler *slog.TextHandler
+	if platform == "dev" {
+		newLogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
+	} else {
+		newLogHandler = slog.NewTextHandler(os.Stderr, nil)
+	}
+	programLogger := slog.New(newLogHandler)
 	user := os.Getenv("ADMIN_USER")
 	programLogger.Info(fmt.Sprintf("Env User: %s", user))
 	pass := os.Getenv("ADMIN_PASS")
