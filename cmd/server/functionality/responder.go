@@ -34,5 +34,8 @@ func respondWithJSON(w http.ResponseWriter, code int, payload any, logger *slog.
 		return
 	}
 	w.WriteHeader(code)
-	w.Write(dat)
+	_, err = w.Write(dat)
+	logger.Error("problem writing to upstream",
+		slog.String("component", "respondwithjson"),
+		slog.String("error", fmt.Sprintf("%+v", err)))
 }

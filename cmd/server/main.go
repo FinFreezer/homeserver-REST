@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	pg "github.com/finfreezer/homeserver/cmd/server/functionality"
 	"github.com/finfreezer/homeserver/internal/auth"
@@ -16,7 +17,10 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	envErr := godotenv.Load()
+	if envErr != nil {
+		fmt.Println("couldn't load envinroment, program may not function properly")
+	}
 	platform := os.Getenv("PLATFORM")
 	var newLogHandler *slog.TextHandler
 	if platform == "dev" {
@@ -43,7 +47,13 @@ func main() {
 					slog.String("component", "main"))
 				os.Exit(1)
 			}
-			newApiConf.Database.DeleteUsers(context.Background())
+			err := newApiConf.Database.DeleteUsers(context.Background())
+			if err != nil {
+				programLogger.Error("unable to clear 'users'-table from database",
+					slog.String("component", "main"),
+					slog.String("error", fmt.Sprintf("%+v", err)))
+				os.Exit(1)
+			}
 			fmt.Println("Cleared 'users' table.")
 			os.Exit(0)
 		}
@@ -131,7 +141,16 @@ func main() {
 	programLogger.Info(fmt.Sprintf("Listening and Serving on port %s", outgoingPort),
 		slog.String("component", "main"))
 	//err = http.ListenAndServe(outgoingPort, newMux)
-	err = http.ListenAndServe(outgoingPort, handler)
+	serverOptions := &http.Server{
+		Addr:              outgoingPort,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	//err = http.ListenAndServe(outgoingPort, handler)
+	err = serverOptions.ListenAndServe()
 	if err != nil {
 		programLogger.Error(fmt.Sprintf("server shutting down with error: %+v", err),
 			slog.String("component", "main"))

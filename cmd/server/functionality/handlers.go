@@ -421,7 +421,12 @@ func (a *ApiConfig) Login(w http.ResponseWriter, r *http.Request) {
 		AuthtokenHash: sql.NullString{String: tokenHash, Valid: true},
 		Name:          dbUser.Name,
 	}
-	a.Database.UpdateUserToken(r.Context(), updateParams)
+	_, updateErr := a.Database.UpdateUserToken(r.Context(), updateParams)
+	if updateErr != nil {
+		a.Logger.Error("error updating user session token",
+			slog.String("component", "login"),
+			slog.String("error", fmt.Sprintf("%+v", updateErr)))
+	}
 	session := database.InsertSessionParams{
 		TokenHash: tokenHash,
 		UserID:    dbUser.ID,
@@ -470,7 +475,8 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Logger.Debug(fmt.Sprintf("received a request to list contents at %s + %s with dirOnly value of %v and depth of %d",
 		a.CurrentRoot, r.PathValue("path"), dirOnly, listDepthInt))
-	fi, err := os.Stat(fullPath)
+	//fi, err := os.Stat(fullPath)
+	fi, err := a.RootFileHandler.Stat(fullPath)
 	if err != nil || !fi.IsDir() {
 		a.Logger.Error("unable to read directory",
 			slog.String("component", "listcontents"),
@@ -478,7 +484,7 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Issue finding directory.\n", err, a.Logger)
 		return
 	}
-	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt, a.Logger)
+	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt, a.Logger, a.RootFileHandler)
 	if err != nil {
 		a.Logger.Error("failed to build internal file tree",
 			slog.String("component", "listcontents"),
@@ -512,10 +518,12 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Logger.Debug(fmt.Sprintf("received a request to stream path %s", fullPath),
 		slog.String("component", "streamvideo"))
-	fi, err := os.Stat(fullPath)
+	//fi, err := os.Stat(fullPath)
+	fi, err := a.RootFileHandler.Stat(fullPath)
 	if err != nil {
 		dir := filepath.Dir(fullPath)
-		if dirStat, err := os.Stat(dir); dirStat.IsDir() && err == nil {
+		//dirStat, err := os.Stat(dir)
+		if dirStat, err := a.RootFileHandler.Stat(dir); dirStat.IsDir() && err == nil {
 			a.Logger.Debug("looking for closest match",
 				slog.String("component", "streamvideo"))
 			fileToMatch := filepath.Base(fullPath)
@@ -537,7 +545,8 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	fi, err = os.Stat(fullPath)
+	//fi, err = os.Stat(fullPath)
+	fi, err = a.RootFileHandler.Stat(fullPath)
 	if fi != nil && fi.IsDir() {
 		respondWithError(w, 400, "Can't stream a directory.\n", err, a.Logger)
 		return
@@ -553,7 +562,8 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		servePlaylist(w, fullPath, a)
 		return
 	}
-	file, err := os.Open(fullPath)
+	//file, err := os.Open(fullPath)
+	file, err := a.RootFileHandler.Open(fullPath)
 	if err != nil {
 		respondWithError(w, 500, "Error opening file.\n", err, a.Logger)
 		return
@@ -598,6 +608,7 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 		for {
 			nFile, err := file.ReadAt(writeData, offsetN)
 			if nFile == 0 {
+				// #nosec G705 Writes only trusted data from backend
 				_, err = w.Write(writeData)
 				if err != nil {
 					a.Logger.Error("error writing data to response",
@@ -612,6 +623,7 @@ func (a *ApiConfig) StreamVideo(w http.ResponseWriter, r *http.Request) {
 			}
 			offsetN += int64(nFile)
 			//_, err = io.Copy(writeBuffer, file)
+			// #nosec G705 Writes only trusted data from backend
 			_, err = w.Write(writeData[:nFile])
 			if err != nil {
 				a.Logger.Error("error writing data to response",
@@ -662,7 +674,8 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Logger.Debug(fmt.Sprintf("received a request to move root to '%s'", newRoot),
 		slog.String("component", "moverootdirectory"))
-	fi, err := os.Stat(newRoot)
+	//fi, err := os.Stat(newRoot)
+	fi, err := a.RootFileHandler.Stat(newRoot)
 	if err != nil {
 		dir := filepath.Dir(filepath.Clean(newRoot))
 		dirToFind := filepath.Base(newRoot)
@@ -678,7 +691,8 @@ func (a *ApiConfig) MoveRootDirectory(w http.ResponseWriter, r *http.Request) {
 			newRoot = closestMatch
 		}
 	}
-	fi, err = os.Stat(newRoot)
+	//fi, err = os.Stat(newRoot)
+	fi, err = a.RootFileHandler.Stat(newRoot)
 	if fi != nil && !fi.IsDir() {
 		respondWithError(w, 400, "New root must be a directory.", nil, a.Logger)
 		return
@@ -709,13 +723,15 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Logger.Debug(fmt.Sprintf("received a request to stream image archive at %s.\n", fullPath),
 		slog.String("component", "streamarchive"))
-	fi, err := os.Stat(fullPath)
+	//fi, err := os.Stat(fullPath)
+	fi, err := a.RootFileHandler.Stat(fullPath)
 	if err != nil {
 		a.Logger.Error("error reading file",
 			slog.String("component", "streamarchive"),
 			slog.String("error", fmt.Sprintf("%+v", err)))
 		dir := filepath.Dir(fullPath)
-		if dirStat, err := os.Stat(dir); dirStat.IsDir() && err == nil {
+		//dirStat, err := os.Stat(dir)
+		if dirStat, err := a.RootFileHandler.Stat(dir); dirStat.IsDir() && err == nil {
 			a.Logger.Debug("looking for closest match",
 				slog.String("component", "streamarchive"))
 			fileToMatch := filepath.Base(fullPath)
@@ -738,12 +754,14 @@ func (a *ApiConfig) StreamArchive(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	fi, err = os.Stat(fullPath)
+	fi, err = a.RootFileHandler.Stat(fullPath)
+	//fi, err = os.Stat(fullPath)
 	if fi != nil && fi.IsDir() {
 		respondWithError(w, 400, "Can't stream a directory.\n", err, a.Logger)
 		return
 	}
-	file, err := os.Open(fullPath)
+	//file, err := os.Open(fullPath)
+	file, err := a.RootFileHandler.Open(fullPath)
 	w.Header().Set("Cache-Control", "no-cache")
 	err, contentType := streamZipImages(fullPath, w, requestedPage, a.Logger)
 	if err != nil {
@@ -773,7 +791,7 @@ func (a *ApiConfig) UpdateAndRestart(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"reply"`
 	}
 	logsDir := "./logs"
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
+	if err := os.MkdirAll(logsDir, 0750); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Cannot create logs directory", err, a.Logger)
 		return
 	}

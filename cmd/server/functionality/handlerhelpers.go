@@ -31,14 +31,15 @@ type FileNode struct {
 
 type FileGroup map[string][]os.DirEntry
 
-func buildFileTree(fromPath string, dirOnly bool, depth int, logger *slog.Logger) (FileNode, error) {
+func buildFileTree(fromPath string, dirOnly bool, depth int, logger *slog.Logger, root *os.Root) (FileNode, error) {
 	itemList, err := os.ReadDir(fromPath)
 	if err != nil {
 		return FileNode{}, err
 	}
 	//itemList = sortFilesByNumber(itemList)
 	itemList = doubleSort(itemList, logger)
-	info, err := os.Stat(fromPath)
+	info, err := root.Stat(fromPath)
+	//info, err := os.Stat(fromPath)
 	if err != nil || !info.IsDir() {
 		return FileNode{Name: info.Name(), IsDir: false}, err
 	}
@@ -49,7 +50,7 @@ func buildFileTree(fromPath string, dirOnly bool, depth int, logger *slog.Logger
 				childNode := FileNode{}
 				err = nil
 				if depth > 0 {
-					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1, logger)
+					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1, logger, root)
 				} else {
 					childNode.Name = item.Name()
 					childNode.IsDir = item.IsDir()
@@ -76,7 +77,11 @@ func buildFileTree(fromPath string, dirOnly bool, depth int, logger *slog.Logger
 				childNode := FileNode{}
 				err = nil
 				if depth > 0 {
-					childNode, err = buildFileTree(path.Join(fromPath, item.Name()), dirOnly, depth-1, logger)
+					childNode, err = buildFileTree(path.Join(fromPath, item.Name()),
+						dirOnly,
+						depth-1,
+						logger,
+						root)
 				} else {
 					childNode.Name = item.Name()
 					childNode.IsDir = item.IsDir()
@@ -138,6 +143,7 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter, logge
 				if err != nil && err != io.EOF {
 					return err, 0
 				}
+				// #nosec G705 Writes only trusted data from backend
 				_, err = w.Write(writeData[:nRead])
 				if err != nil {
 					if flusher, ok := w.(http.Flusher); ok {
@@ -181,6 +187,7 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter, logge
 					if err != nil && err != io.EOF {
 						return err, 500
 					}
+					// #nosec G705 Writes only trusted data from backend
 					_, err = w.Write(writeData[:nRead])
 					if err != nil {
 						if flusher, ok := w.(http.Flusher); ok {
@@ -200,14 +207,17 @@ func readByteRange(file *os.File, byteRange string, w http.ResponseWriter, logge
 func readContentType(f *os.File) (string, error) {
 	readBuffer := make([]byte, 512)
 	n, err := f.Read(readBuffer)
-	f.Seek(0, 0)
+	_, seekErr := f.Seek(0, 0)
+	if seekErr != nil {
+		return "", seekErr
+	}
 	if err != nil && err != io.EOF && n != 0 {
 		return "", err
 	}
 	return http.DetectContentType(readBuffer), nil
 }
 
-func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.File {
+func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger, root *os.Root) *os.File {
 	logger.Debug(fmt.Sprintf("Creating a playlist with current directory for %s", path),
 		slog.String("component", "createdefaultplaylist"))
 	streamingPath := os.Getenv("DST_SERVER") + os.Getenv("DFLT_PORT") + "/stream/"
@@ -215,7 +225,8 @@ func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.F
 	logger.Debug(fmt.Sprintf("Start from episode '%s'", startFrom),
 		slog.String("component", "createDefaultPlaylist"))
 	dir := filepath.Dir(path)
-	dirStat, err := os.Stat(dir)
+	//dirStat, err := os.Stat(dir)
+	dirStat, err := root.Stat(dir)
 	if err != nil {
 		logger.Error("problem getting dirStat",
 			slog.String("component", "createdefaultplaylist"),
@@ -223,11 +234,20 @@ func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.F
 		)
 		return nil
 	}
-	if _, err := os.Stat(dir + "/playlist.m3u"); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(dir + "/playlist.m3u")
+	if _, err := root.Stat(dir + "/playlist.m3u"); !errors.Is(err, os.ErrNotExist) {
+		err = root.Remove(dir + "/playlist.m3u")
+		if err != nil {
+			logger.Error("error removing playlist file",
+				slog.String("component", "createdefaultplaylist"),
+				slog.String("error", fmt.Sprintf("%+v", err)),
+			)
+		}
 	}
-
-	playlist, err := os.Create(dir + "/playlist.m3u")
+	/*if _, err := os.Stat(dir + "/playlist.m3u"); !errors.Is(err, os.ErrNotExist) {
+		os.Remove(dir + "/playlist.m3u")
+	}*/
+	playlist, err := root.Create(dir + "/playlist.m3u")
+	//playlist, err := os.Create(dir + "/playlist.m3u")
 	if err != nil {
 		logger.Error("problem creating file",
 			slog.String("component", "createdefaultplaylist"),
@@ -235,8 +255,20 @@ func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.F
 		)
 		return nil
 	}
-	playlist.Write([]byte("#EXTM3U\n"))
-	playlist.Write([]byte("#PLAYLIST: Streaming\n"))
+	_, err = playlist.Write([]byte("#EXTM3U\n"))
+	if err != nil {
+		logger.Error("error writing file header data to upstream",
+			slog.String("component", "createdefaultplaylist"),
+			slog.String("error", fmt.Sprintf("%+v", err)),
+		)
+	}
+	_, err = playlist.Write([]byte("#PLAYLIST: Streaming\n"))
+	if err != nil {
+		logger.Error("error writing file header data to upstream",
+			slog.String("component", "createdefaultplaylist"),
+			slog.String("error", fmt.Sprintf("%+v", err)),
+		)
+	}
 	if dirStat.IsDir() {
 		entryList, err := os.ReadDir(dir)
 		if err != nil {
@@ -272,11 +304,23 @@ func createDefaultPlaylist(path string, a *ApiConfig, logger *slog.Logger) *os.F
 				toWrite := fmt.Sprintf("#EXTINF:-1,%s\n%s\n",
 					infoStr, urlPath.String(),
 				)
-				playlist.Write([]byte(toWrite))
+				_, writeErr := playlist.Write([]byte(toWrite))
+				if writeErr != nil {
+					logger.Error("error writing data to upstream",
+						slog.String("component", "createdefaultplaylist"),
+						slog.String("error", fmt.Sprintf("%+v", err)),
+					)
+				}
 				episode += 1
 			}
 		}
-		playlist.Seek(0, 0)
+		_, seekErr := playlist.Seek(0, 0)
+		if seekErr != nil {
+			logger.Error("error setting file offset",
+				slog.String("component", "createdefaultplaylist"),
+				slog.String("error", fmt.Sprintf("%+v", err)),
+			)
+		}
 		return playlist
 	} else {
 		return nil
@@ -322,7 +366,8 @@ func moveEpisodeToStart(files []os.DirEntry, firstEp string) ([]os.DirEntry, int
 }
 
 func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
-	fi, err := os.Stat(fullPath)
+	//fi, err := os.Stat(fullPath)
+	fi, err := a.RootFileHandler.Stat(fullPath)
 	if err != nil {
 		a.Logger.Error("error reading path",
 			slog.String("component", "serveplaylist"),
@@ -334,14 +379,19 @@ func servePlaylist(w http.ResponseWriter, fullPath string, a *ApiConfig) {
 		respondWithError(w, 400, "Can't stream a directory.\n", err, a.Logger)
 		return
 	}
-	if playlist := createDefaultPlaylist(fullPath, a, a.Logger); playlist != nil {
+	if playlist := createDefaultPlaylist(fullPath, a, a.Logger, a.RootFileHandler); playlist != nil {
 		defer playlist.Close()
 		a.Logger.Info("responding with a playlist",
 			slog.String("component", "serveplaylist"))
 		w.Header().Set("Content-Type", "audio/x-mpegurl")
 		w.Header().Set("Content-Disposition", "inline; filename=\"playlist.m3u\"")
 		w.WriteHeader(200)
-		io.Copy(w, playlist)
+		_, copyErr := io.Copy(w, playlist)
+		if copyErr != nil {
+			a.Logger.Error("error copying data to upstream",
+				slog.String("component", "serveplaylist"),
+				slog.String("error", fmt.Sprintf("%+v", copyErr)))
+		}
 		return
 	}
 	respondWithError(w, 400, "Unable to reach target.", err, a.Logger)
@@ -586,7 +636,7 @@ func SearchForMatches(root string, searchTerm string, logger *slog.Logger) ([]fi
 	matchDict := make(map[string]fileMatch)
 	scoreDict := make(map[float64][]string)
 	finalMatches := []fileMatch{}
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
 			name := strings.ToLower(d.Name())
 			term := strings.ToLower(searchTerm)
@@ -602,6 +652,11 @@ func SearchForMatches(root string, searchTerm string, logger *slog.Logger) ([]fi
 		}
 		return nil
 	})
+	if walkErr != nil {
+		logger.Error("error during WalkDir",
+			slog.String("component", "searchformatches"),
+			slog.String("error", fmt.Sprintf("%+v", walkErr)))
+	}
 	valueSlice := []float64{}
 	for _, fileMatch := range matchDict {
 		valueSlice = append(valueSlice, fileMatch.score)

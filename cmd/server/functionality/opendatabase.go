@@ -10,19 +10,19 @@ import (
 
 	cfg "github.com/finfreezer/homeserver/internal/config"
 	"github.com/finfreezer/homeserver/internal/database"
-	"github.com/joho/godotenv"
 )
 
 type ApiConfig struct {
-	Database       *database.Queries
-	Platform       string
-	Logger         *slog.Logger
-	Secret         string
-	ApiKey         string
-	Authorized     bool
-	AssetRoot      string
-	CurrentRoot    string
-	ActiveSessions *cfg.Sessions
+	Database        *database.Queries
+	Platform        string
+	Logger          *slog.Logger
+	Secret          string
+	ApiKey          string
+	Authorized      bool
+	AssetRoot       string
+	CurrentRoot     string
+	ActiveSessions  *cfg.Sessions
+	RootFileHandler *os.Root
 }
 
 func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
@@ -30,7 +30,7 @@ func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 	var errLoop error
 	programLogger.Debug("loading server data...",
 		slog.String("component", "opendatabase"))
-	godotenv.Load()
+	//godotenv.Load()
 	platform := os.Getenv("PLATFORM")
 	secret := os.Getenv("SECRET")
 	if secret == "" {
@@ -65,7 +65,12 @@ func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 			break
 		}
 
-		db.Close()
+		dbErr := db.Close()
+		if dbErr != nil {
+			programLogger.Error("error closing database",
+				slog.String("component", "opendatabase"),
+				slog.String("error", fmt.Sprintf("%+v", dbErr)))
+		}
 		time.Sleep(2 * time.Second)
 	}
 	if errLoop != nil {
@@ -83,19 +88,30 @@ func OpenDatabase(programLogger *slog.Logger) (*ApiConfig, error) {
 	}
 	expired := sessions.InitSessions(dbSessions)
 	for _, session := range expired {
-		dbQueries.DeleteSession(context.Background(), session)
+		_, err = dbQueries.DeleteSession(context.Background(), session)
+		if err != nil {
+			programLogger.Error("error deleting expired session from database",
+				slog.String("component", "opendatabase"),
+				slog.String("error", fmt.Sprintf("%+v", err)))
+		}
 	}
-
+	newRootHandler, err := os.OpenRoot(newRoot)
+	if err != nil {
+		programLogger.Error("error opening root directory, assets may not be loading properly",
+			slog.String("component", "opendatabase"),
+			slog.String("error", fmt.Sprintf("%+v", errLoop)))
+	}
 	newApiConf := ApiConfig{
-		Database:       dbQueries,
-		Platform:       platform,
-		Logger:         programLogger,
-		Secret:         secret,
-		ApiKey:         ApiKey,
-		Authorized:     false,
-		AssetRoot:      newRoot,
-		CurrentRoot:    newRoot,
-		ActiveSessions: sessions,
+		Database:        dbQueries,
+		Platform:        platform,
+		Logger:          programLogger,
+		Secret:          secret,
+		ApiKey:          ApiKey,
+		Authorized:      false,
+		AssetRoot:       newRoot,
+		CurrentRoot:     newRoot,
+		ActiveSessions:  sessions,
+		RootFileHandler: newRootHandler,
 	}
 	return &newApiConf, nil
 }
