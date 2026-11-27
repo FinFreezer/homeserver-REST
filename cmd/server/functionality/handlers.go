@@ -480,8 +480,9 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !fi.IsDir() {
 		a.Logger.Error("unable to read directory",
 			slog.String("component", "listcontents"),
+			slog.Group("variables", slog.String("path", fullPath)),
 			slog.String("error", fmt.Sprintf("%+v", err)))
-		respondWithError(w, 400, "Issue finding directory.\n", err, a.Logger)
+		respondWithError(w, 400, "Issue finding directory", err, a.Logger)
 		return
 	}
 	resultTree, err := buildFileTree(fullPath, dirOnly, listDepthInt, a.Logger, a.RootFileHandler)
@@ -489,12 +490,12 @@ func (a *ApiConfig) ListContents(w http.ResponseWriter, r *http.Request) {
 		a.Logger.Error("failed to build internal file tree",
 			slog.String("component", "listcontents"),
 			slog.String("error", fmt.Sprintf("%+v", err)))
-		respondWithError(w, 500, "Issue building directory tree-view.\n", err, a.Logger)
+		respondWithError(w, 500, "Issue building directory tree-view", err, a.Logger)
 		return
 	}
 	a.Logger.Info(fmt.Sprintf("successfully served a request to list files in %s", fullPath),
 		slog.String("component", "listcontents"))
-	msg := fmt.Sprintf("Listing files in %s.\n", fullPath)
+	msg := fmt.Sprintf("Listing files in %s", fullPath)
 	respondWithJSON(w, http.StatusOK,
 		ListDirResponse{
 			Message: msg,
